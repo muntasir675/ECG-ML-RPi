@@ -116,8 +116,10 @@ def record_ecg():
             if running:
                 print("✓ Electrodes reconnected. Resuming...")
 
-        voltage = round(ecg_channel.voltage, 4)
+        # voltage = round(ecg_channel.voltage, 4)
+        voltage = ecg_channel.voltage  # keep full float precision
         raw = ecg_channel.value
+
         voltage_buffer.append(voltage)
         raw_buffer.append(raw)
         print(f"Sample {sample_count}: {voltage} V | raw {raw}", end='\r')
