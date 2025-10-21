@@ -6,6 +6,8 @@ import RPi.GPIO as GPIO
 import csv
 import time
 import os
+import signal
+import sys
 
 # ---------- CONFIGURATION ----------
 CSV_FILENAME = "Sensor_read.csv"
@@ -23,6 +25,16 @@ i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c, address=0x48)
 ads.gain = 1
 ecg_channel = AnalogIn(ads, ADS_CHANNEL)
+
+# ---------- SIGNAL HANDLER ----------
+def cleanup_and_exit(signum, frame):
+    print(f"\nCaught signal {signum}. Cleaning up GPIO and exiting...")
+    GPIO.cleanup()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, cleanup_and_exit)   # Ctrl+C
+signal.signal(signal.SIGTSTP, cleanup_and_exit)  # Ctrl+Z
+signal.signal(signal.SIGTERM, cleanup_and_exit)  # kill command
 
 # ---------- HELPER FUNCTIONS ----------
 def leads_off():
@@ -87,12 +99,9 @@ def record_ecg():
 # ---------- MAIN ----------
 def main():
     init_csv(CSV_FILENAME)
-    try:
-        record_ecg()
-    except KeyboardInterrupt:
-        print("\nRecording stopped by user.")
-    finally:
-        GPIO.cleanup()
+    record_ecg()
+    GPIO.cleanup()
+    print("GPIO cleaned up. Exiting.")
 
 if __name__ == "__main__":
     main()
