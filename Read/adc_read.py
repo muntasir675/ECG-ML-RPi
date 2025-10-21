@@ -11,11 +11,10 @@ import sys
 
 # ---------- CONFIGURATION ----------
 CSV_FILENAME = "Sensor_read.csv"
-SAMPLE_RATE = 100               # Hz
-LO_MINUS_PIN = 17
-LO_PLUS_PIN  = 27
+SAMPLE_RATE = 100           # Hz
+LO_PLUS_PIN = 14  # physical pin 8
+LO_MINUS_PIN = 15 # physical pin 10
 ADS_CHANNEL = 0
-NUM_SAMPLES = 200               # number of samples per recording
 
 # ---------- SETUP ----------
 GPIO.setmode(GPIO.BCM)
@@ -26,10 +25,20 @@ ads = ADS.ADS1115(i2c, address=0x48)
 ads.gain = 1
 ecg_channel = AnalogIn(ads, ADS_CHANNEL)
 
+# ---------- GLOBAL BUFFERS ----------
+voltage_buffer = []
+raw_buffer = []
+ecg_id = None
+running = True
+
 # ---------- SIGNAL HANDLER ----------
 def cleanup_and_exit(signum, frame):
-    print(f"\nCaught signal {signum}. Cleaning up GPIO and exiting...")
+    global running
+    running = False
+    print(f"\nCaught signal {signum}. Saving data and cleaning up...")
+    save_data()
     GPIO.cleanup()
+    print("GPIO cleaned up. Exiting.")
     sys.exit(0)
 
 signal.signal(signal.SIGINT, cleanup_and_exit)   # Ctrl+C
@@ -45,63 +54,74 @@ def get_next_ecg_id(filename):
         return 0
     with open(filename, 'r') as f:
         lines = f.readlines()
-        ecg_ids = []
+        ids = []
         for line in lines:
             if line.startswith('v') or line.startswith('r'):
                 try:
-                    ecg_ids.append(int(line.split(',')[0][1:]))
+                    ids.append(int(line.split(',')[0][1:]))
                 except:
                     continue
-        return max(ecg_ids) + 1 if ecg_ids else 0
+        return max(ids) + 1 if ids else 0
 
 def init_csv(filename):
     if not os.path.exists(filename):
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
-            header = ['ecg_id'] + list(range(NUM_SAMPLES))
-            writer.writerow(header)
+            writer.writerow(['ecg_id'] + ['sample_'+str(i) for i in range(1000)])
         print(f"Created CSV file {filename}")
     else:
         print(f"Appending to existing CSV file {filename}")
 
-# ---------- RECORDING ----------
+def save_data():
+    global voltage_buffer, raw_buffer, ecg_id
+    if voltage_buffer or raw_buffer:
+        with open(CSV_FILENAME, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([f'v{ecg_id}'] + voltage_buffer)
+            writer.writerow([f'r{ecg_id}'] + raw_buffer)
+        print(f"Saved {len(voltage_buffer)} samples as v{ecg_id} / r{ecg_id}")
+        voltage_buffer = []
+        raw_buffer = []
+
+# ---------- RECORDING FUNCTION ----------
 def record_ecg():
+    global voltage_buffer, raw_buffer, ecg_id, running
     ecg_id = get_next_ecg_id(CSV_FILENAME)
-    voltage_buffer = []
-    raw_buffer = []
+    sample_count = 0
     sampling_delay = 1.0 / SAMPLE_RATE
 
     print(f"=== Recording ECG ID {ecg_id} ===")
+    print("Waiting for electrodes to connect...")
+
     while leads_off():
         print("⚠️ Electrodes disconnected! Connect them to start.")
         time.sleep(1)
 
-    print("✓ Electrodes connected. Recording... Press Ctrl+C to stop early.")
+    print("✓ Electrodes connected. Recording indefinitely. Press Ctrl+C to stop.")
 
-    for i in range(NUM_SAMPLES):
-        while leads_off():
-            time.sleep(0.1)  # pause if electrodes disconnect
+    while running:
+        if leads_off():
+            print("\n⚠️ Electrodes disconnected! Pausing recording...")
+            while leads_off() and running:
+                time.sleep(0.1)
+            if running:
+                print("✓ Electrodes reconnected. Resuming...")
 
         voltage = round(ecg_channel.voltage, 4)
         raw = ecg_channel.value
         voltage_buffer.append(voltage)
         raw_buffer.append(raw)
-        print(f"Sample {i}: {voltage} V | raw {raw}", end='\r')
+        print(f"Sample {sample_count}: {voltage} V | raw {raw}", end='\r')
+        sample_count += 1
         time.sleep(sampling_delay)
-
-    with open(CSV_FILENAME, 'a', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow([f'v{ecg_id}'] + voltage_buffer)
-        writer.writerow([f'r{ecg_id}'] + raw_buffer)
-
-    print(f"\nRecording complete. Saved as v{ecg_id} and r{ecg_id}.")
 
 # ---------- MAIN ----------
 def main():
     init_csv(CSV_FILENAME)
-    record_ecg()
+    record_ecg()  # runs until signal interrupts
+    save_data()
     GPIO.cleanup()
-    print("GPIO cleaned up. Exiting.")
+    print("Exiting.")
 
 if __name__ == "__main__":
     main()
