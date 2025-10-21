@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 
 DATASET_PATH = '/home/pi/Desktop/raspi-files/Extract/ecg_signal_rows.csv'
 
-SAMPLE_INDEX = 10
+SAMPLE_INDEX = 0
 SAMPLING_RATE = 100
 GAIN = 1.0
 
