@@ -67,7 +67,7 @@ def init_csv(filename):
     if not os.path.exists(filename):
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['ecg_id'] + ['sample_'+str(i) for i in range(1000)])
+            writer.writerow(['ecg_id'] + list(range(1000)))
         print(f"Created CSV file {filename}")
     else:
         print(f"Appending to existing CSV file {filename}")
