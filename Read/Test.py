@@ -7,7 +7,7 @@ import time
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c, address=0x48)
 ads.gain = 1
-chan = AnalogIn(ads, 0)
+chan = AnalogIn(ads, 1)
 
 while True:
     print(f"Raw: {chan.value} | Voltage: {chan.voltage:.4f}V")
