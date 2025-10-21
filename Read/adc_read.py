@@ -122,7 +122,7 @@ def record_ecg():
 
         voltage_buffer.append(voltage)
         raw_buffer.append(raw)
-        print(f"Sample {sample_count}: {voltage} V | raw {raw}", end='\r')
+        print(f"Sample {sample_count}: {voltage:.6f} V | raw {raw}", end='\r')
         sample_count += 1
         time.sleep(sampling_delay)
 
