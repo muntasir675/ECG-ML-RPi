@@ -16,6 +16,15 @@ LO_PLUS_PIN = 14  # physical pin 8
 LO_MINUS_PIN = 15 # physical pin 10
 ADS_CHANNEL = 0
 
+# ---------- STARTUP OPTION ----------
+ignore_leads = False
+user_input = input("Ignore lead disconnects? (y/N): ").strip().lower()
+if user_input == 'y':
+    ignore_leads = True
+    print("⚠️ Will ignore lead disconnects.")
+else:
+    print("✓ Will check leads normally.")
+
 # ---------- SETUP ----------
 GPIO.setmode(GPIO.BCM)
 GPIO.setup([LO_MINUS_PIN, LO_PLUS_PIN], GPIO.IN)
@@ -67,7 +76,7 @@ def init_csv(filename):
     if not os.path.exists(filename):
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['ecg_id'] + list(range(1000)))
+            writer.writerow(list(range(1000)))  # Only numbers, no "sample_"
         print(f"Created CSV file {filename}")
     else:
         print(f"Appending to existing CSV file {filename}")
@@ -91,16 +100,16 @@ def record_ecg():
     sampling_delay = 1.0 / SAMPLE_RATE
 
     print(f"=== Recording ECG ID {ecg_id} ===")
-    print("Waiting for electrodes to connect...")
+    if not ignore_leads:
+        print("Waiting for electrodes to connect...")
+        while leads_off() and running:
+            print("⚠️ Electrodes disconnected! Connect them to start.")
+            time.sleep(1)
 
-    while leads_off():
-        print("⚠️ Electrodes disconnected! Connect them to start.")
-        time.sleep(1)
-
-    print("✓ Electrodes connected. Recording indefinitely. Press Ctrl+C to stop.")
+    print("✓ Recording started. Press Ctrl+C to stop.")
 
     while running:
-        if leads_off():
+        if not ignore_leads and leads_off():
             print("\n⚠️ Electrodes disconnected! Pausing recording...")
             while leads_off() and running:
                 time.sleep(0.1)
