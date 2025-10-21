@@ -6,14 +6,14 @@ import RPi.GPIO as GPIO
 import csv
 import time
 import os
-from datetime import datetime
 
 # ---------- CONFIGURATION ----------
-CSV_FILENAME = "ecg_data.csv"
-SAMPLE_RATE = 200               # Hz
-LO_MINUS_PIN = 17               # GPIO for LO-
-LO_PLUS_PIN  = 27               # GPIO for LO+
-ADS_CHANNEL = 0                 # A0 channel on ADS1115
+CSV_FILENAME = "Sensor_read.csv"
+SAMPLE_RATE = 100               # Hz
+LO_MINUS_PIN = 17
+LO_PLUS_PIN  = 27
+ADS_CHANNEL = 0
+NUM_SAMPLES = 200               # number of samples per recording
 
 # ---------- SETUP ----------
 GPIO.setmode(GPIO.BCM)
@@ -26,82 +26,73 @@ ecg_channel = AnalogIn(ads, ADS_CHANNEL)
 
 # ---------- HELPER FUNCTIONS ----------
 def leads_off():
-    """Return True if electrodes are disconnected"""
     return GPIO.input(LO_PLUS_PIN) or GPIO.input(LO_MINUS_PIN)
 
 def get_next_ecg_id(filename):
-    """Get the next ECG ID from CSV"""
     if not os.path.exists(filename):
-        return 1
+        return 0
     with open(filename, 'r') as f:
-        reader = csv.reader(f)
-        rows = list(reader)
-        if len(rows) <= 1:  # only header
-            return 1
-        last_row = rows[-1]
-        return int(last_row[0]) + 1
+        lines = f.readlines()
+        ecg_ids = []
+        for line in lines:
+            if line.startswith('v') or line.startswith('r'):
+                try:
+                    ecg_ids.append(int(line.split(',')[0][1:]))
+                except:
+                    continue
+        return max(ecg_ids) + 1 if ecg_ids else 0
 
 def init_csv(filename):
-    """Create CSV with header if it doesn't exist"""
     if not os.path.exists(filename):
         with open(filename, 'w', newline='') as f:
-            header = ['ecg_id', 'timestamp', 'voltage']
-            csv.writer(f).writerow(header)
-        print(f"Created new CSV file: {filename}")
+            writer = csv.writer(f)
+            header = ['ecg_id'] + list(range(NUM_SAMPLES))
+            writer.writerow(header)
+        print(f"Created CSV file {filename}")
     else:
-        print(f"Appending to existing CSV file: {filename}")
+        print(f"Appending to existing CSV file {filename}")
 
-# ---------- MAIN RECORDING FUNCTION ----------
+# ---------- RECORDING ----------
 def record_ecg():
     ecg_id = get_next_ecg_id(CSV_FILENAME)
+    voltage_buffer = []
+    raw_buffer = []
     sampling_delay = 1.0 / SAMPLE_RATE
-    print(f"\n=== Recording ECG ID {ecg_id} ===")
-    print(f"Sample rate: {SAMPLE_RATE} Hz")
-    print("Waiting for electrodes to connect...")
 
+    print(f"=== Recording ECG ID {ecg_id} ===")
     while leads_off():
-        print("⚠️ Electrodes disconnected! Please attach electrodes.")
+        print("⚠️ Electrodes disconnected! Connect them to start.")
         time.sleep(1)
 
-    print("✓ Electrodes connected. Starting in 1 second...")
-    time.sleep(1)
+    print("✓ Electrodes connected. Recording... Press Ctrl+C to stop early.")
 
-    start_time = time.time()
-    sample_count = 0
+    for i in range(NUM_SAMPLES):
+        while leads_off():
+            time.sleep(0.1)  # pause if electrodes disconnect
+
+        voltage = round(ecg_channel.voltage, 4)
+        raw = ecg_channel.value
+        voltage_buffer.append(voltage)
+        raw_buffer.append(raw)
+        print(f"Sample {i}: {voltage} V | raw {raw}", end='\r')
+        time.sleep(sampling_delay)
 
     with open(CSV_FILENAME, 'a', newline='') as f:
         writer = csv.writer(f)
+        writer.writerow([f'v{ecg_id}'] + voltage_buffer)
+        writer.writerow([f'r{ecg_id}'] + raw_buffer)
 
-        while True:
-            if leads_off():
-                print("\n⚠️ Electrodes disconnected! Pausing recording...")
-                while leads_off():
-                    time.sleep(0.1)
-                print("✓ Electrodes reconnected. Resuming...")
-
-            voltage = ecg_channel.voltage
-            timestamp = datetime.now().isoformat()
-            writer.writerow([ecg_id, timestamp, round(voltage, 4)])
-            print(f"Sample {sample_count}: {voltage:.4f} V", end='\r')
-            sample_count += 1
-
-            # maintain sampling rate
-            elapsed = time.time() - start_time
-            time.sleep(max(0, sampling_delay - (elapsed % sampling_delay)))
+    print(f"\nRecording complete. Saved as v{ecg_id} and r{ecg_id}.")
 
 # ---------- MAIN ----------
 def main():
-    print("\n=== AD8232 ECG Logger ===")
-    print(f"Started at {datetime.now()}")
     init_csv(CSV_FILENAME)
-
     try:
         record_ecg()
     except KeyboardInterrupt:
         print("\nRecording stopped by user.")
     finally:
         GPIO.cleanup()
-        print("GPIO cleaned up. Exiting.")
 
 if __name__ == "__main__":
     main()
