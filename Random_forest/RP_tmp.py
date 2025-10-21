@@ -29,16 +29,6 @@ else:
 
 # Example 1: Format data from a CSV row
 def format_from_csv_row(csv_path, row_index=0):
-    """
-    Load a row from the original CSV and format it for prediction
-    
-    Parameters:
-    - csv_path: Path to the ECG CSV file
-    - row_index: Which row to extract (default: 0)
-    
-    Returns:
-    - Formatted DataFrame ready for model prediction
-    """
     print(f"\n--- Formatting from CSV row {row_index} ---")
     
     # Load the raw data
@@ -68,15 +58,7 @@ def format_from_csv_row(csv_path, row_index=0):
 
 # Example 2: Format data from a dictionary
 def format_from_dict(data_dict):
-    """
-    Format ECG data from a dictionary of features
-    
-    Parameters:
-    - data_dict: Dictionary with feature names as keys and values
-    
-    Returns:
-    - Formatted DataFrame ready for model prediction
-    """
+
     print(f"\n--- Formatting from dictionary ---")
     print(f"Input features: {len(data_dict)}")
     
@@ -102,15 +84,6 @@ def format_from_dict(data_dict):
 
 # Example 3: Format data from a Pandas Series
 def format_from_series(series_data):
-    """
-    Format ECG data from a Pandas Series
-    
-    Parameters:
-    - series_data: Pandas Series with feature values
-    
-    Returns:
-    - Formatted DataFrame ready for model prediction
-    """
     print(f"\n--- Formatting from Series ---")
     
     # Convert to DataFrame
