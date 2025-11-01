@@ -34,7 +34,6 @@ i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c, address=0x48)
 ads.gain = 2  # ±2.048V range - ideal for AD8232 with 3.3V supply
 ads.data_rate = 860  # Max sampling rate for ADS1115
-ads.mode = ADS.Mode.CONTINUOUS  # Continuous conversion mode for faster reading
 ecg_channel = AnalogIn(ads, ADS_CHANNEL)
 
 # ---------- GLOBAL BUFFERS ----------
@@ -49,7 +48,6 @@ def cleanup_and_exit(signum, frame):
     running = False
     print(f"\nCaught signal {signum}. Saving data and cleaning up...")
     save_data()
-    ads.mode = ADS.Mode.SINGLE  # Return to single-shot mode
     GPIO.cleanup()
     print("GPIO cleaned up. Exiting.")
     sys.exit(0)
@@ -113,7 +111,6 @@ def record_ecg():
             time.sleep(1)
 
     print("✓ Recording started. Press Ctrl+C to stop.")
-    print("⚡ Using continuous mode for faster sampling...")
     loop_start = time.time()
 
     while running:
@@ -153,7 +150,6 @@ def main():
     init_csv(CSV_FILENAME)
     record_ecg()  # runs until signal interrupts
     save_data()
-    ads.mode = ADS.Mode.SINGLE  # Return to single-shot mode
     GPIO.cleanup()
     print("Exiting.")
 
