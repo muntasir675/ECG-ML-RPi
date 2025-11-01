@@ -11,10 +11,12 @@ import sys
 
 # ---------- CONFIGURATION ----------
 CSV_FILENAME = "Sensor_read.csv"
-SAMPLE_RATE = 100           # Hz
+SAMPLE_RATE = 400           # Hz
 LO_PLUS_PIN = 14  # physical pin 8
 LO_MINUS_PIN = 15 # physical pin 10
 ADS_CHANNEL = 0
+PRINT_INTERVAL = 0.025  # seconds
+last_print_time = time.time()
 
 # ---------- STARTUP OPTION ----------
 ignore_leads = False
@@ -122,8 +124,13 @@ def record_ecg():
 
         voltage_buffer.append(voltage)
         raw_buffer.append(raw)
-        print(f"Sample {sample_count}: {voltage:.6f} V | raw {raw}", end='\r')
         sample_count += 1
+
+        current_time = time.time()
+        if current_time - last_print_time >= PRINT_INTERVAL:
+            print(f"Sample {sample_count}: {voltage:.6f} V | raw {raw}", end='\r')
+            last_print_time = current_time
+
         time.sleep(sampling_delay)
 
 # ---------- MAIN ----------
