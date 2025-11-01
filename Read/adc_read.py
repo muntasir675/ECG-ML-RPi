@@ -15,8 +15,7 @@ SAMPLE_RATE = 400           # Hz
 LO_PLUS_PIN = 14  # physical pin 8
 LO_MINUS_PIN = 15 # physical pin 10
 ADS_CHANNEL = 0
-PRINT_INTERVAL = 0.025  # seconds
-last_print_time = time.time()
+PRINT_INTERVAL = 1.0  # Print every 1 second to reduce lag
 
 # ---------- STARTUP OPTION ----------
 ignore_leads = False
@@ -90,7 +89,7 @@ def save_data():
             writer = csv.writer(f)
             writer.writerow([f'v{ecg_id}'] + voltage_buffer)
             writer.writerow([f'r{ecg_id}'] + raw_buffer)
-        print(f"Saved {len(voltage_buffer)} samples as v{ecg_id} / r{ecg_id}")
+        print(f"\nSaved {len(voltage_buffer)} samples as v{ecg_id} / r{ecg_id}")
         voltage_buffer = []
         raw_buffer = []
 
@@ -100,6 +99,8 @@ def record_ecg():
     ecg_id = get_next_ecg_id(CSV_FILENAME)
     sample_count = 0
     sampling_delay = 1.0 / SAMPLE_RATE
+    last_print_time = time.time()  # Move inside function
+    start_time = time.time()
 
     print(f"=== Recording ECG ID {ecg_id} ===")
     if not ignore_leads:
@@ -109,6 +110,7 @@ def record_ecg():
             time.sleep(1)
 
     print("✓ Recording started. Press Ctrl+C to stop.")
+    loop_start = time.time()
 
     while running:
         if not ignore_leads and leads_off():
@@ -117,21 +119,29 @@ def record_ecg():
                 time.sleep(0.1)
             if running:
                 print("✓ Electrodes reconnected. Resuming...")
+                loop_start = time.time()  # Reset timing after reconnect
 
-        # voltage = round(ecg_channel.voltage, 4)
-        voltage = ecg_channel.voltage  # keep full float precision
+        # Read sensor
+        voltage = ecg_channel.voltage  # Keep full float precision
         raw = ecg_channel.value
 
         voltage_buffer.append(voltage)
         raw_buffer.append(raw)
         sample_count += 1
 
+        # Print status less frequently (every PRINT_INTERVAL seconds)
         current_time = time.time()
         if current_time - last_print_time >= PRINT_INTERVAL:
-            print(f"Sample {sample_count}: {voltage:.6f} V | raw {raw}", end='\r')
+            elapsed = current_time - start_time
+            actual_rate = sample_count / elapsed if elapsed > 0 else 0
+            print(f"Samples: {sample_count} | Rate: {actual_rate:.1f} Hz | Last: {voltage:.6f} V")
             last_print_time = current_time
 
-        time.sleep(sampling_delay)
+        # Better timing: account for processing time
+        next_sample_time = loop_start + (sample_count * sampling_delay)
+        sleep_time = next_sample_time - time.time()
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
 # ---------- MAIN ----------
 def main():
