@@ -11,7 +11,7 @@ import sys
 
 # ---------- CONFIGURATION ----------
 CSV_FILENAME = "Sensor_read.csv"
-SAMPLE_RATE = 400           # Hz
+TARGET_RATE = 300           # Hz target (actual will be ~250-350 Hz)
 LO_PLUS_PIN = 14  # physical pin 8
 LO_MINUS_PIN = 15 # physical pin 10
 ADS_CHANNEL = 0
@@ -34,6 +34,7 @@ i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c, address=0x48)
 ads.gain = 2  # ±2.048V range - ideal for AD8232 with 3.3V supply
 ads.data_rate = 860  # Max sampling rate for ADS1115
+ads.mode = ADS.Mode.CONTINUOUS  # Continuous conversion mode for faster reading
 ecg_channel = AnalogIn(ads, ADS_CHANNEL)
 
 # ---------- GLOBAL BUFFERS ----------
@@ -48,6 +49,7 @@ def cleanup_and_exit(signum, frame):
     running = False
     print(f"\nCaught signal {signum}. Saving data and cleaning up...")
     save_data()
+    ads.mode = ADS.Mode.SINGLE  # Return to single-shot mode
     GPIO.cleanup()
     print("GPIO cleaned up. Exiting.")
     sys.exit(0)
@@ -99,8 +101,8 @@ def record_ecg():
     global voltage_buffer, raw_buffer, ecg_id, running
     ecg_id = get_next_ecg_id(CSV_FILENAME)
     sample_count = 0
-    sampling_delay = 1.0 / SAMPLE_RATE
-    last_print_time = time.time()  # Move inside function
+    sampling_delay = 1.0 / TARGET_RATE
+    last_print_time = time.time()
     start_time = time.time()
 
     print(f"=== Recording ECG ID {ecg_id} ===")
@@ -111,6 +113,7 @@ def record_ecg():
             time.sleep(1)
 
     print("✓ Recording started. Press Ctrl+C to stop.")
+    print("⚡ Using continuous mode for faster sampling...")
     loop_start = time.time()
 
     while running:
@@ -122,7 +125,7 @@ def record_ecg():
                 print("✓ Electrodes reconnected. Resuming...")
                 loop_start = time.time()  # Reset timing after reconnect
 
-        # Read sensor
+        # Read sensor - in continuous mode this is much faster
         voltage = ecg_channel.voltage  # Keep full float precision
         raw = ecg_channel.value
 
@@ -138,17 +141,19 @@ def record_ecg():
             print(f"Samples: {sample_count} | Rate: {actual_rate:.1f} Hz | Last: {voltage:.6f} V", end='\r', flush=True)
             last_print_time = current_time
 
-        # Better timing: account for processing time
+        # Timing control - adjust based on actual performance
         next_sample_time = loop_start + (sample_count * sampling_delay)
         sleep_time = next_sample_time - time.time()
         if sleep_time > 0:
             time.sleep(sleep_time)
+        # If we're running behind (sleep_time < 0), just continue immediately
 
 # ---------- MAIN ----------
 def main():
     init_csv(CSV_FILENAME)
     record_ecg()  # runs until signal interrupts
     save_data()
+    ads.mode = ADS.Mode.SINGLE  # Return to single-shot mode
     GPIO.cleanup()
     print("Exiting.")
 
