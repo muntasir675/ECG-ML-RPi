@@ -15,7 +15,7 @@ SAMPLE_RATE = 400           # Hz
 LO_PLUS_PIN = 14  # physical pin 8
 LO_MINUS_PIN = 15 # physical pin 10
 ADS_CHANNEL = 0
-PRINT_INTERVAL = 1.0  # Print every 1 second to reduce lag
+PRINT_INTERVAL = 0.1  # Print every 0.1 seconds (10 Hz update rate)
 
 # ---------- STARTUP OPTION ----------
 ignore_leads = False
