@@ -32,7 +32,8 @@ GPIO.setup([LO_MINUS_PIN, LO_PLUS_PIN], GPIO.IN)
 
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c, address=0x48)
-ads.gain = 1
+ads.gain = 2  # ±2.048V range - ideal for AD8232 with 3.3V supply
+ads.data_rate = 860  # Max sampling rate for ADS1115
 ecg_channel = AnalogIn(ads, ADS_CHANNEL)
 
 # ---------- GLOBAL BUFFERS ----------
