@@ -16,6 +16,7 @@ LO_PLUS_PIN = 14  # physical pin 8
 LO_MINUS_PIN = 15 # physical pin 10
 ADS_CHANNEL = 0
 PRINT_INTERVAL = 0.1  # Print every 0.1 seconds
+LEAD_OFF_THRESHOLD = 0.05  # Must be disconnected for 50ms before warning
 
 # ---------- STARTUP OPTION ----------
 ignore_leads = False
@@ -62,7 +63,21 @@ signal.signal(signal.SIGTERM, cleanup_and_exit)
 
 # ---------- HELPER FUNCTIONS ----------
 def leads_off():
+    """Check if leads are off with debouncing to prevent jitter"""
     return GPIO.input(LO_PLUS_PIN) or GPIO.input(LO_MINUS_PIN)
+
+def leads_off_debounced(threshold=LEAD_OFF_THRESHOLD):
+    """Check if leads are consistently off for the threshold duration"""
+    if not leads_off():
+        return False
+    
+    # If initially off, check if it stays off for threshold time
+    start_time = time.time()
+    while time.time() - start_time < threshold:
+        if not leads_off():
+            return False  # Lead came back on, was just jitter
+        time.sleep(0.001)  # 1ms check interval
+    return True  # Leads stayed off for full threshold
 
 def get_next_ecg_id(filename):
     if not os.path.exists(filename):
@@ -110,7 +125,7 @@ def record_ecg():
     print(f"=== Recording ECG ID {ecg_id} ===")
     if not ignore_leads:
         print("Waiting for electrodes to connect...")
-        while leads_off() and running:
+        while leads_off_debounced() and running:
             print("⚠️ Electrodes disconnected! Connect them to start.")
             time.sleep(1)
 
@@ -119,9 +134,9 @@ def record_ecg():
     loop_start = time.time()
 
     while running:
-        if not ignore_leads and leads_off():
+        if not ignore_leads and leads_off_debounced():
             print("\n⚠️ Electrodes disconnected! Pausing recording...")
-            while leads_off() and running:
+            while leads_off_debounced() and running:
                 time.sleep(0.1)
             if running:
                 print("✓ Electrodes reconnected. Resuming...")
