@@ -134,7 +134,7 @@ def record_ecg():
         if current_time - last_print_time >= PRINT_INTERVAL:
             elapsed = current_time - start_time
             actual_rate = sample_count / elapsed if elapsed > 0 else 0
-            print(f"Samples: {sample_count} | Rate: {actual_rate:.1f} Hz | Last: {voltage:.6f} V")
+            print(f"Samples: {sample_count} | Rate: {actual_rate:.1f} Hz | Last: {voltage:.6f} V", end='\r', flush=True)
             last_print_time = current_time
 
         # Better timing: account for processing time
