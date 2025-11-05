@@ -130,7 +130,6 @@ def record_ecg():
         # OPTIMIZATION: Only read raw value once (single I2C transaction)
         raw = ecg_channel.value
         
-        # Calculate voltage from raw value locally (no second I2C read)
         voltage = raw * VOLTS_PER_BIT
 
         voltage_buffer.append(voltage)
