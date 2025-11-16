@@ -152,16 +152,17 @@ def diagnose_hardware():
     # 2. Check ADC readings
     print(f"\n2. ADC READINGS (Channel {ADS_CHANNEL}):")
     print(f"   Current Gain: {ads.gain} ({GAIN_SETTINGS[ads.gain][1]})")
-    print(f"   Sampling 20 values...")
+    print(f"   Sampling 50 values over 2.5 seconds...")
+    print(f"   (Looking for heartbeat pattern...)")
     
     raw_values = []
-    for i in range(20):
+    for i in range(50):
         raw = ecg_channel.value
         voltage = ecg_channel.voltage
         raw_values.append(raw)
-        if i < 5 or i >= 15:  # Show first and last 5
+        if i < 3 or i >= 47:  # Show first and last 3
             print(f"   Sample {i+1:2d}: Raw={raw:6d} | Voltage={voltage:+.6f}V")
-        elif i == 5:
+        elif i == 3:
             print("   ...")
         time.sleep(0.05)
     
@@ -192,14 +193,27 @@ def diagnose_hardware():
         print("      - Electrodes disconnected (rail-to-rail)")
         print("      - Gain setting too high")
         print("      - AD8232 output issue")
-    elif range_raw < 100:
-        print("   ⚠️  VERY WEAK SIGNAL")
-        print("   Try:")
-        print("      - Check electrode contact")
-        print("      - Clean skin with alcohol")
-        print("      - Increase gain setting")
+    elif range_raw < 200:
+        print("   ⚠️  NO HEARTBEAT DETECTED - Signal at baseline")
+        print("   Hardware is working but no ECG signal present!")
+        print("   ")
+        print("   ELECTRODE TROUBLESHOOTING:")
+        print("   1. Clean skin with rubbing alcohol, let dry")
+        print("   2. Remove old electrodes, use fresh ones")
+        print("   3. Press electrodes FIRMLY for 10+ seconds")
+        print("   4. Wait 1-2 minutes for gel to hydrate skin")
+        print("   5. Try these positions:")
+        print("      • RA: Below RIGHT collarbone")
+        print("      • LA: Below LEFT collarbone")
+        print("      • RL: Right lower abdomen")
+        print("   6. Hold breath briefly, then breathe normally")
+        print("   7. Stay still, relax muscles")
+    elif range_raw < 500:
+        print("   ⚠️  WEAK ECG SIGNAL")
+        print("   Some variation detected but signal is weak.")
+        print("   Try better electrode contact or different placement.")
     else:
-        print("   ✓ Signal looks reasonable!")
+        print("   ✓ Good ECG signal detected!")
         print(f"   Signal variation: {range_raw} LSB")
     
     print("\n" + "="*60 + "\n")
