@@ -21,6 +21,7 @@ PRINT_INTERVAL = 0.1  # Print every 0.1 seconds
 ignore_leads = False
 invert_lead_logic = False
 auto_gain = True
+check_leads_interval = 100  # Check leads every N samples (not every sample)
 
 print("\n=== ECG RECORDER WITH DIAGNOSTICS ===")
 print("This will help identify connection issues\n")
@@ -43,6 +44,11 @@ if user_input == 'y':
 user_input = input("Auto-test different gain settings? (Y/n): ").strip().lower()
 if user_input == 'n':
     auto_gain = False
+
+user_input = input("Check leads every N samples (50-500, default 100): ").strip()
+if user_input.isdigit():
+    check_leads_interval = int(user_input)
+    print(f"✓ Will check leads every {check_leads_interval} samples")
 
 # ---------- SETUP ----------
 GPIO.setmode(GPIO.BCM)
@@ -91,7 +97,7 @@ signal.signal(signal.SIGTERM, cleanup_and_exit)
 
 # ---------- HELPER FUNCTIONS ----------
 def leads_off():
-    """Check if leads are disconnected"""
+    """Check if leads are disconnected with debouncing"""
     lo_plus = GPIO.input(LO_PLUS_PIN)
     lo_minus = GPIO.input(LO_MINUS_PIN)
     
@@ -101,6 +107,17 @@ def leads_off():
     else:
         # Normal: Leads OFF when either is HIGH
         return lo_plus or lo_minus
+
+def leads_off_debounced(check_count=5, check_delay=0.002):
+    """Check if leads are disconnected with debouncing to avoid false triggers"""
+    disconnected_count = 0
+    for _ in range(check_count):
+        if leads_off():
+            disconnected_count += 1
+        time.sleep(check_delay)
+    
+    # Consider disconnected only if majority of checks fail
+    return disconnected_count >= (check_count // 2 + 1)
 
 def get_next_ecg_id(filename):
     if not os.path.exists(filename):
@@ -280,6 +297,7 @@ def record_ecg():
     print(f"RECORDING ECG ID {ecg_id}")
     print(f"Target Rate: {TARGET_RATE} Hz")
     print(f"Gain: {ads.gain} ({GAIN_SETTINGS[ads.gain][1]})")
+    print(f"Lead check interval: Every {check_leads_interval} samples")
     print(f"{'='*60}\n")
     
     if not ignore_leads:
@@ -291,16 +309,19 @@ def record_ecg():
             time.sleep(0.5)
 
     print("\n✓ Recording started. Press Ctrl+C to stop.")
+    print("💡 TIP: Lead checks happen periodically, not every sample (reduces false triggers)")
     loop_start = time.time()
 
     while running:
-        if not ignore_leads and leads_off():
-            print("\n⚠️ Electrodes disconnected! Pausing recording...")
-            while leads_off() and running:
-                time.sleep(0.1)
-            if running:
-                print("✓ Electrodes reconnected. Resuming...")
-                loop_start = time.time()
+        # Only check leads periodically, not every sample
+        if not ignore_leads and sample_count % check_leads_interval == 0:
+            if leads_off_debounced():
+                print("\n⚠️ Electrodes disconnected! Pausing recording...")
+                while leads_off_debounced() and running:
+                    time.sleep(0.1)
+                if running:
+                    print("✓ Electrodes reconnected. Resuming...")
+                    loop_start = time.time()
 
         # Read raw value (single I2C transaction)
         raw = ecg_channel.value
