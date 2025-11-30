@@ -9,7 +9,7 @@ import signal
 import sys
 
 CSV_FILENAME = "Sensor_read.csv"
-ADS_CHANNEL = ADS.P0
+ADS_CHANNEL = 0          # A0
 PRINT_INTERVAL = 0.1
 
 voltage_buffer = []
