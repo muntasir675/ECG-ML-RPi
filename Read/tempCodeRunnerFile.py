@@ -106,17 +106,49 @@ signal.signal(signal.SIGTERM, cleanup_and_exit)
 
 
 # ---------- HELPER FUNCTIONS ----------
-def leads_off():
-    """Check if leads are disconnected"""
+def get_lead_status():
+    """Get detailed lead connection status"""
     lo_plus = GPIO.input(LO_PLUS_PIN)
     lo_minus = GPIO.input(LO_MINUS_PIN)
     
     if invert_lead_logic:
-        # Inverted: Leads OFF when both are LOW
-        return not (lo_plus or lo_minus)
+        # Inverted: Leads OFF when pins are LOW
+        lo_plus_off = not lo_plus
+        lo_minus_off = not lo_minus
     else:
-        # Normal: Leads OFF when either is HIGH
-        return lo_plus or lo_minus
+        # Normal: Leads OFF when pins are HIGH
+        lo_plus_off = lo_plus
+        lo_minus_off = lo_minus
+    
+    return {
+        'lo_plus_raw': lo_plus,
+        'lo_minus_raw': lo_minus,
+        'lo_plus_off': lo_plus_off,
+        'lo_minus_off': lo_minus_off,
+        'any_off': lo_plus_off or lo_minus_off
+    }
+
+
+def leads_off():
+    """Check if any leads are disconnected"""
+    status = get_lead_status()
+    return status['any_off']
+
+
+def get_disconnected_electrodes():
+    """Return a string describing which electrodes are disconnected"""
+    status = get_lead_status()
+    
+    if not status['any_off']:
+        return "All connected ✓"
+    
+    disconnected = []
+    if status['lo_plus_off']:
+        disconnected.append("LO+ (RA/LA)")
+    if status['lo_minus_off']:
+        disconnected.append("LO- (RL)")
+    
+    return " & ".join(disconnected) + " disconnected ❌"
 
 
 def get_next_ecg_id(filename):
@@ -164,10 +196,11 @@ def diagnose_hardware():
     print("="*60)
     
     # 1. Check GPIO pins
+    status = get_lead_status()
     print("\n1. LEAD-OFF DETECTION PINS:")
-    print(f"   LO+ Pin {LO_PLUS_PIN} (BCM): {GPIO.input(LO_PLUS_PIN)} {'(HIGH)' if GPIO.input(LO_PLUS_PIN) else '(LOW)'}")
-    print(f"   LO- Pin {LO_MINUS_PIN} (BCM): {GPIO.input(LO_MINUS_PIN)} {'(HIGH)' if GPIO.input(LO_MINUS_PIN) else '(LOW)'}")
-    print(f"   Lead Status: {'DISCONNECTED ❌' if leads_off() else 'CONNECTED ✓'}")
+    print(f"   LO+ Pin {LO_PLUS_PIN} (BCM): {status['lo_plus_raw']} {'(HIGH)' if status['lo_plus_raw'] else '(LOW)'}")
+    print(f"   LO- Pin {LO_MINUS_PIN} (BCM): {status['lo_minus_raw']} {'(HIGH)' if status['lo_minus_raw'] else '(LOW)'}")
+    print(f"   Status: {get_disconnected_electrodes()}")
     
     # 2. Check ADC readings
     print(f"\n2. ADC READINGS (Channel {ADS_CHANNEL}):")
@@ -308,9 +341,7 @@ def record_ecg():
     if not ignore_leads:
         print("⏳ Waiting for electrodes to connect...")
         while leads_off() and running:
-            lo_plus = GPIO.input(LO_PLUS_PIN)
-            lo_minus = GPIO.input(LO_MINUS_PIN)
-            print(f"⚠️ Electrodes disconnected! LO+={lo_plus} LO-={lo_minus}", end='\r', flush=True)
+            print(f"⚠️ {get_disconnected_electrodes()}                    ", end='\r', flush=True)
             time.sleep(0.5)
 
 
@@ -320,11 +351,12 @@ def record_ecg():
 
     while running:
         if not ignore_leads and leads_off():
-            print("\n⚠️ Electrodes disconnected! Pausing recording...")
+            print(f"\n⚠️ {get_disconnected_electrodes()} - Pausing recording...")
             while leads_off() and running:
+                print(f"⚠️ {get_disconnected_electrodes()}                    ", end='\r', flush=True)
                 time.sleep(0.1)
             if running:
-                print("✓ Electrodes reconnected. Resuming...")
+                print("\n✓ Electrodes reconnected. Resuming...                    ")
                 loop_start = time.time()
 
 
