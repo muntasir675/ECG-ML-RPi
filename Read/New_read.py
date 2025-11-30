@@ -23,7 +23,7 @@ ads = ADS.ADS1115(i2c, address=0x48)
 
 ads.gain = 1
 ads.data_rate = 250
-ads.mode = ADS.Mode.CONTINUOUS
+ads.mode = Mode.CONTINUOUS
 
 ecg_channel = AnalogIn(ads, ADS_CHANNEL)
 
