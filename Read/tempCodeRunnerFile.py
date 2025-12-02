@@ -11,13 +11,15 @@ import sys
 
 
 
+
 # ---------- CONFIGURATION ----------
 CSV_FILENAME = "Sensor_read.csv"
-TARGET_RATE = 250           # Hz target
+TARGET_RATE = 100           # Hz target (changed from 250 to 100)
 LO_PLUS_PIN = 14  # physical pin 8
 LO_MINUS_PIN = 15 # physical pin 10
 ADS_CHANNEL = 0
 PRINT_INTERVAL = 0.1  # Print every 0.1 seconds
+
 
 
 
@@ -28,13 +30,16 @@ auto_gain = True
 
 
 
+
 print("\n=== ECG RECORDER WITH DIAGNOSTICS ===")
 print("This will help identify connection issues\n")
 
 
 
+
 user_input = input("Run hardware diagnostics first? (Y/n): ").strip().lower()
 run_diagnostics = user_input != 'n'
+
 
 
 
@@ -47,10 +52,12 @@ else:
 
 
 
+
 user_input = input("Invert lead detection logic? (y/N): ").strip().lower()
 if user_input == 'y':
     invert_lead_logic = True
     print("⚠️ Using inverted lead detection logic.")
+
 
 
 
@@ -60,20 +67,24 @@ if user_input == 'n':
 
 
 
+
 # ---------- SETUP ----------
 GPIO.setmode(GPIO.BCM)
 GPIO.setup([LO_MINUS_PIN, LO_PLUS_PIN], GPIO.IN)
 
 
 
+
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c, address=0x48)
 ads.gain = 2  # ±2.048V range
-ads.data_rate = 475  # FIXED: Was 250, now 475 to allow 250Hz loop
+ads.data_rate = 475  # ADC rate (stays 475 for overhead)
+
 
 
 
 ecg_channel = AnalogIn(ads, ADS_CHANNEL)
+
 
 
 
@@ -89,9 +100,11 @@ GAIN_SETTINGS = {
 
 
 
+
 def get_volts_per_bit():
     max_voltage = GAIN_SETTINGS[ads.gain][0]
     return max_voltage / 32768.0
+
 
 
 
@@ -100,6 +113,7 @@ voltage_buffer = []
 raw_buffer = []
 ecg_id = None
 running = True
+
 
 
 
@@ -115,9 +129,11 @@ def cleanup_and_exit(signum, frame):
 
 
 
+
 signal.signal(signal.SIGINT, cleanup_and_exit)
 signal.signal(signal.SIGTSTP, cleanup_and_exit)
 signal.signal(signal.SIGTERM, cleanup_and_exit)
+
 
 
 
@@ -146,10 +162,12 @@ def get_lead_status():
 
 
 
+
 def leads_off():
     """Check if any leads are disconnected"""
     status = get_lead_status()
     return status['any_off']
+
 
 
 
@@ -170,6 +188,7 @@ def get_disconnected_electrodes():
 
 
 
+
 def get_next_ecg_id(filename):
     if not os.path.exists(filename):
         return 0
@@ -186,6 +205,7 @@ def get_next_ecg_id(filename):
 
 
 
+
 def init_csv(filename):
     if not os.path.exists(filename):
         with open(filename, 'w', newline='') as f:
@@ -194,6 +214,7 @@ def init_csv(filename):
         print(f"✓ Created CSV file {filename}")
     else:
         print(f"✓ Appending to existing CSV file {filename}")
+
 
 
 
@@ -207,6 +228,7 @@ def save_data():
         print(f"\n✓ Saved {len(voltage_buffer)} samples as v{ecg_id} / r{ecg_id}")
         voltage_buffer = []
         raw_buffer = []
+
 
 
 
@@ -295,6 +317,7 @@ def diagnose_hardware():
 
 
 
+
 def test_gain_settings():
     """Test different gain settings to find optimal one"""
     print("\n" + "="*60)
@@ -346,6 +369,7 @@ def test_gain_settings():
 
 
 
+
 # ---------- RECORDING FUNCTION ----------
 def record_ecg():
     global voltage_buffer, raw_buffer, ecg_id, running
@@ -354,6 +378,7 @@ def record_ecg():
     sampling_delay = 1.0 / TARGET_RATE
     last_print_time = time.time()
     start_time = time.time()
+
 
 
 
@@ -371,8 +396,10 @@ def record_ecg():
 
 
 
+
     print("\n✓ Recording started. Press Ctrl+C to stop.")
     loop_start = time.time()
+
 
 
 
@@ -388,15 +415,18 @@ def record_ecg():
 
 
 
+
         # Read raw value (single I2C transaction)
         raw = ecg_channel.value
         voltage = raw * get_volts_per_bit()
 
 
 
+
         voltage_buffer.append(voltage)
         raw_buffer.append(raw)
         sample_count += 1
+
 
 
 
@@ -410,11 +440,13 @@ def record_ecg():
 
 
 
+
         # Timing control
         next_sample_time = loop_start + (sample_count * sampling_delay)
         sleep_time = next_sample_time - time.time()
         if sleep_time > 0:
             time.sleep(sleep_time)
+
 
 
 
@@ -440,6 +472,7 @@ def main():
     save_data()
     GPIO.cleanup()
     print("\n\n✓ Recording complete. Exiting.")
+
 
 
 
