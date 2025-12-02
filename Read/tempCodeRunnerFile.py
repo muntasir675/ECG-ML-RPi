@@ -9,64 +9,35 @@ import os
 import signal
 import sys
 
-
 # ---------- CONFIGURATION ----------
 CSV_FILENAME = "Sensor_read.csv"
-TARGET_RATE = 250           # Hz target (changed from 300)
-LO_PLUS_PIN = 14  # physical pin 8
-LO_MINUS_PIN = 15 # physical pin 10
+TARGET_RATE = 250           # Target sampling rate in Hz
+ADS_RATE = 475              # Set ADC faster than target (475 or 860) to allow overhead
+FIXED_GAIN = 2              # Fixed gain (±2.048V) - no more asking
+LO_PLUS_PIN = 14            # BCM 14 (Physical 8)
+LO_MINUS_PIN = 15           # BCM 15 (Physical 10)
 ADS_CHANNEL = 0
-PRINT_INTERVAL = 0.1  # Print every 0.1 seconds
-
+PRINT_INTERVAL = 0.2        # Print status every 0.2s
 
 # ---------- STARTUP OPTIONS ----------
-ignore_leads = False
-invert_lead_logic = False
-auto_gain = True
+# Hardcoded preferences to skip prompts
+ignore_leads = False        # Set to True if you want to record even with leads off
+invert_lead_logic = False   # Standard logic: 0=Connected, 1=Disconnected
 
-
-print("\n=== ECG RECORDER WITH DIAGNOSTICS ===")
-print("This will help identify connection issues\n")
-
-
-user_input = input("Run hardware diagnostics first? (Y/n): ").strip().lower()
-run_diagnostics = user_input != 'n'
-
-
-user_input = input("Ignore lead disconnects? (y/N): ").strip().lower()
-if user_input == 'y':
-    ignore_leads = True
-    print("⚠️ Will ignore lead disconnects.")
-else:
-    print("✓ Will check leads normally.")
-
-
-user_input = input("Invert lead detection logic? (y/N): ").strip().lower()
-if user_input == 'y':
-    invert_lead_logic = True
-    print("⚠️ Using inverted lead detection logic.")
-
-
-user_input = input("Auto-test different gain settings? (Y/n): ").strip().lower()
-if user_input == 'n':
-    auto_gain = False
-
+print("\n=== ECG RECORDER (FAST START) ===")
 
 # ---------- SETUP ----------
 GPIO.setmode(GPIO.BCM)
 GPIO.setup([LO_MINUS_PIN, LO_PLUS_PIN], GPIO.IN)
 
-
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c, address=0x48)
-ads.gain = 2  # ±2.048V range (changed from 2/3)
-ads.data_rate = 250  # Native ADS1115 rate (changed from 860)
-
+ads.gain = FIXED_GAIN
+ads.data_rate = ADS_RATE    # Now 475 SPS to ensure we can actually hit 250 Hz loop
 
 ecg_channel = AnalogIn(ads, ADS_CHANNEL)
 
-
-# Conversion factors for different gains
+# Conversion factors
 GAIN_SETTINGS = {
     2/3: (6.144, "±6.144V"),
     1: (4.096, "±4.096V"),
@@ -76,18 +47,15 @@ GAIN_SETTINGS = {
     16: (0.256, "±0.256V")
 }
 
-
 def get_volts_per_bit():
     max_voltage = GAIN_SETTINGS[ads.gain][0]
     return max_voltage / 32768.0
-
 
 # ---------- GLOBAL BUFFERS ----------
 voltage_buffer = []
 raw_buffer = []
 ecg_id = None
 running = True
-
 
 # ---------- SIGNAL HANDLER ----------
 def cleanup_and_exit(signum, frame):
@@ -99,82 +67,49 @@ def cleanup_and_exit(signum, frame):
     print("GPIO cleaned up. Exiting.")
     sys.exit(0)
 
-
 signal.signal(signal.SIGINT, cleanup_and_exit)
-signal.signal(signal.SIGTSTP, cleanup_and_exit)
 signal.signal(signal.SIGTERM, cleanup_and_exit)
 
-
 # ---------- HELPER FUNCTIONS ----------
-def get_lead_status():
-    """Get detailed lead connection status"""
-    lo_plus = GPIO.input(LO_PLUS_PIN)
-    lo_minus = GPIO.input(LO_MINUS_PIN)
-    
-    if invert_lead_logic:
-        # Inverted: Leads OFF when pins are LOW
-        lo_plus_off = not lo_plus
-        lo_minus_off = not lo_minus
-    else:
-        # Normal: Leads OFF when pins are HIGH
-        lo_plus_off = lo_plus
-        lo_minus_off = lo_minus
-    
-    return {
-        'lo_plus_raw': lo_plus,
-        'lo_minus_raw': lo_minus,
-        'lo_plus_off': lo_plus_off,
-        'lo_minus_off': lo_minus_off,
-        'any_off': lo_plus_off or lo_minus_off
-    }
-
-
 def leads_off():
-    """Check if any leads are disconnected"""
-    status = get_lead_status()
-    return status['any_off']
-
+    """Check if any leads are disconnected (High = Off)"""
+    return GPIO.input(LO_PLUS_PIN) or GPIO.input(LO_MINUS_PIN)
 
 def get_disconnected_electrodes():
-    """Return a string describing which electrodes are disconnected"""
-    status = get_lead_status()
+    """Return string describing disconnects"""
+    if not leads_off():
+        return "Connected ✓"
     
-    if not status['any_off']:
-        return "All connected ✓"
-    
-    disconnected = []
-    if status['lo_plus_off']:
-        disconnected.append("LO+ (RA/LA)")
-    if status['lo_minus_off']:
-        disconnected.append("LO- (RL)")
-    
-    return " & ".join(disconnected) + " disconnected ❌"
-
+    parts = []
+    if GPIO.input(LO_PLUS_PIN): parts.append("LO+ (RA/LA)")
+    if GPIO.input(LO_MINUS_PIN): parts.append("LO- (RL)")
+    return " & ".join(parts) + " disconnected ❌"
 
 def get_next_ecg_id(filename):
     if not os.path.exists(filename):
         return 0
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-        ids = []
-        for line in lines:
-            if line.startswith('v') or line.startswith('r'):
-                try:
-                    ids.append(int(line.split(',')[0][1:]))
-                except:
-                    continue
-        return max(ids) + 1 if ids else 0
-
+    try:
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+            ids = []
+            for line in lines:
+                if line.startswith('v') or line.startswith('r'):
+                    try:
+                        ids.append(int(line.split(',')[0][1:]))
+                    except:
+                        continue
+            return max(ids) + 1 if ids else 0
+    except:
+        return 0
 
 def init_csv(filename):
     if not os.path.exists(filename):
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(list(range(1000)))
-        print(f"✓ Created CSV file {filename}")
+            writer.writerow(list(range(1000))) # Header
+        print(f"✓ Created {filename}")
     else:
-        print(f"✓ Appending to existing CSV file {filename}")
-
+        print(f"✓ Appending to {filename}")
 
 def save_data():
     global voltage_buffer, raw_buffer, ecg_id
@@ -187,228 +122,71 @@ def save_data():
         voltage_buffer = []
         raw_buffer = []
 
-
-# ---------- DIAGNOSTIC FUNCTIONS ----------
-def diagnose_hardware():
-    """Run comprehensive hardware diagnostics"""
-    print("\n" + "="*60)
-    print("HARDWARE DIAGNOSTICS")
-    print("="*60)
-    
-    # 1. Check GPIO pins
-    status = get_lead_status()
-    print("\n1. LEAD-OFF DETECTION PINS:")
-    print(f"   LO+ Pin {LO_PLUS_PIN} (BCM): {status['lo_plus_raw']} {'(HIGH)' if status['lo_plus_raw'] else '(LOW)'}")
-    print(f"   LO- Pin {LO_MINUS_PIN} (BCM): {status['lo_minus_raw']} {'(HIGH)' if status['lo_minus_raw'] else '(LOW)'}")
-    print(f"   Status: {get_disconnected_electrodes()}")
-    
-    # 2. Check ADC readings
-    print(f"\n2. ADC READINGS (Channel {ADS_CHANNEL}):")
-    print(f"   Current Gain: {ads.gain} ({GAIN_SETTINGS[ads.gain][1]})")
-    print(f"   Sampling 50 values over 2.5 seconds...")
-    print(f"   (Looking for heartbeat pattern...)")
-    
-    raw_values = []
-    for i in range(50):
-        raw = ecg_channel.value
-        voltage = ecg_channel.voltage
-        raw_values.append(raw)
-        if i < 3 or i >= 47:  # Show first and last 3
-            print(f"   Sample {i+1:2d}: Raw={raw:6d} | Voltage={voltage:+.6f}V")
-        elif i == 3:
-            print("   ...")
-        time.sleep(0.05)
-    
-    # 3. Analyze readings
-    avg_raw = sum(raw_values) / len(raw_values)
-    min_raw = min(raw_values)
-    max_raw = max(raw_values)
-    range_raw = max_raw - min_raw
-    
-    print(f"\n3. SIGNAL ANALYSIS:")
-    print(f"   Average: {avg_raw:6.0f}")
-    print(f"   Min:     {min_raw:6d}")
-    print(f"   Max:     {max_raw:6d}")
-    print(f"   Range:   {range_raw:6d}")
-    
-    # 4. Diagnosis
-    print(f"\n4. DIAGNOSIS:")
-    if range_raw < 10:
-        print("   ⚠️  FLAT LINE - No signal variation detected")
-        print("   Possible causes:")
-        print("      - Electrodes not connected to skin")
-        print("      - AD8232 OUTPUT not connected to ADS1115")
-        print("      - AD8232 not powered (check 3.3V)")
-        print("      - Wrong ADS1115 channel selected")
-    elif abs(avg_raw) > 30000:
-        print("   ⚠️  SATURATED - Signal at extreme values")
-        print("   Possible causes:")
-        print("      - Electrodes disconnected (rail-to-rail)")
-        print("      - Gain setting too high")
-        print("      - AD8232 output issue")
-    elif range_raw < 200:
-        print("   ⚠️  NO HEARTBEAT DETECTED - Signal at baseline")
-        print("   Hardware is working but no ECG signal present!")
-        print("   ")
-        print("   ELECTRODE TROUBLESHOOTING:")
-        print("   1. Clean skin with rubbing alcohol, let dry")
-        print("   2. Remove old electrodes, use fresh ones")
-        print("   3. Press electrodes FIRMLY for 10+ seconds")
-        print("   4. Wait 1-2 minutes for gel to hydrate skin")
-        print("   5. Try these positions:")
-        print("      • RA: Below RIGHT collarbone")
-        print("      • LA: Below LEFT collarbone")
-        print("      • RL: Right lower abdomen")
-        print("   6. Hold breath briefly, then breathe normally")
-        print("   7. Stay still, relax muscles")
-    elif range_raw < 500:
-        print("   ⚠️  WEAK ECG SIGNAL")
-        print("   Some variation detected but signal is weak.")
-        print("   Try better electrode contact or different placement.")
-    else:
-        print("   ✓ Good ECG signal detected!")
-        print(f"   Signal variation: {range_raw} LSB")
-    
-    print("\n" + "="*60 + "\n")
-
-
-def test_gain_settings():
-    """Test different gain settings to find optimal one"""
-    print("\n" + "="*60)
-    print("AUTO-GAIN TESTING")
-    print("="*60)
-    
-    gain_results = {}
-    
-    for gain_val in [2/3, 1, 2, 4, 8, 16]:
-        ads.gain = gain_val
-        time.sleep(0.1)  # Let ADC settle
-        
-        print(f"\nTesting gain {gain_val} ({GAIN_SETTINGS[gain_val][1]})...")
-        
-        raw_values = []
-        for _ in range(20):
-            raw_values.append(ecg_channel.value)
-            time.sleep(0.02)
-        
-        avg = sum(raw_values) / len(raw_values)
-        range_val = max(raw_values) - min(raw_values)
-        
-        gain_results[gain_val] = {
-            'avg': avg,
-            'range': range_val,
-            'saturated': abs(avg) > 30000 or max(raw_values) >= 32760 or min(raw_values) <= -32760
-        }
-        
-        print(f"   Range: {range_val:5d} | Avg: {avg:6.0f} | {'SATURATED ❌' if gain_results[gain_val]['saturated'] else 'OK ✓'}")
-    
-    # Find best gain
-    best_gain = None
-    best_range = 0
-    
-    for gain_val, results in gain_results.items():
-        if not results['saturated'] and results['range'] > best_range:
-            best_gain = gain_val
-            best_range = results['range']
-    
-    if best_gain:
-        ads.gain = best_gain
-        print(f"\n✓ RECOMMENDED GAIN: {best_gain} ({GAIN_SETTINGS[best_gain][1]})")
-        print(f"  Signal range: {best_range} LSB")
-    else:
-        ads.gain = 2
-        print(f"\n⚠️ All gains show issues, using {ads.gain} ({GAIN_SETTINGS[ads.gain][1]})")
-    
-    print("="*60 + "\n")
-
-
 # ---------- RECORDING FUNCTION ----------
 def record_ecg():
     global voltage_buffer, raw_buffer, ecg_id, running
     ecg_id = get_next_ecg_id(CSV_FILENAME)
     sample_count = 0
     sampling_delay = 1.0 / TARGET_RATE
-    last_print_time = time.time()
-    start_time = time.time()
-
-
-    print(f"\n{'='*60}")
-    print(f"RECORDING ECG ID {ecg_id}")
-    print(f"Target Rate: {TARGET_RATE} Hz")
-    print(f"Gain: {ads.gain} ({GAIN_SETTINGS[ads.gain][1]})")
-    print(f"{'='*60}\n")
     
-    if not ignore_leads:
-        print("⏳ Waiting for electrodes to connect...")
+    print(f"\n{'='*40}")
+    print(f"RECORDING ID: {ecg_id}")
+    print(f"Target: {TARGET_RATE} Hz (ADC Rate: {ADS_RATE} SPS)")
+    print(f"Gain: {ads.gain} ({GAIN_SETTINGS[ads.gain][1]})")
+    print(f"{'='*40}\n")
+    
+    # Initial connection check
+    if not ignore_leads and leads_off():
+        print("⏳ Waiting for electrodes...")
         while leads_off() and running:
-            print(f"⚠️ {get_disconnected_electrodes()}                    ", end='\r', flush=True)
+            print(f"⚠️ {get_disconnected_electrodes()}   ", end='\r', flush=True)
             time.sleep(0.5)
-
-
-    print("\n✓ Recording started. Press Ctrl+C to stop.")
-    loop_start = time.time()
-
+    
+    print("\n✓ Recording! Press Ctrl+C to stop.")
+    
+    start_time = time.time()
+    last_print_time = start_time
+    loop_start = start_time
+    
+    volts_per_bit = get_volts_per_bit()
 
     while running:
+        # Check leads
         if not ignore_leads and leads_off():
-            print(f"\n⚠️ {get_disconnected_electrodes()} - Pausing recording...")
+            print(f"\n⚠️ {get_disconnected_electrodes()} - Paused...")
             while leads_off() and running:
-                print(f"⚠️ {get_disconnected_electrodes()}                    ", end='\r', flush=True)
                 time.sleep(0.1)
             if running:
-                print("\n✓ Electrodes reconnected. Resuming...                    ")
-                loop_start = time.time()
+                print("✓ Resuming...                   ")
+                # Reset timing to avoid fast-forwarding
+                loop_start = time.time() - (sample_count * sampling_delay)
 
-
-        # Read raw value (single I2C transaction)
+        # Read Sample
         raw = ecg_channel.value
-        voltage = raw * get_volts_per_bit()
-
-
+        voltage = raw * volts_per_bit
+        
         voltage_buffer.append(voltage)
         raw_buffer.append(raw)
         sample_count += 1
 
+        # Print Status
+        curr_time = time.time()
+        if curr_time - last_print_time >= PRINT_INTERVAL:
+            elapsed = curr_time - start_time
+            rate = sample_count / elapsed if elapsed > 0 else 0
+            print(f"Samples: {sample_count:5d} | Rate: {rate:5.1f} Hz | Val: {voltage:+.4f}V", end='\r', flush=True)
+            last_print_time = curr_time
 
-        # Print status
-        current_time = time.time()
-        if current_time - last_print_time >= PRINT_INTERVAL:
-            elapsed = current_time - start_time
-            actual_rate = sample_count / elapsed if elapsed > 0 else 0
-            print(f"📊 Samples: {sample_count:5d} | Rate: {actual_rate:6.1f} Hz | Value: {voltage:+.6f}V (Raw: {raw:6d})", end='\r', flush=True)
-            last_print_time = current_time
-
-
-        # Timing control
-        next_sample_time = loop_start + (sample_count * sampling_delay)
-        sleep_time = next_sample_time - time.time()
-        if sleep_time > 0:
-            time.sleep(sleep_time)
-
+        # Precise Timing
+        next_wake = loop_start + (sample_count * sampling_delay)
+        sleep_dur = next_wake - time.time()
+        if sleep_dur > 0:
+            time.sleep(sleep_dur)
 
 # ---------- MAIN ----------
-def main():
-    print("\n")
+if __name__ == "__main__":
     init_csv(CSV_FILENAME)
-    
-    if run_diagnostics:
-        diagnose_hardware()
-        
-        if auto_gain:
-            test_gain_settings()
-        
-        print("\nDiagnostics complete!")
-        user_input = input("Continue to recording? (Y/n): ").strip().lower()
-        if user_input == 'n':
-            print("Exiting.")
-            GPIO.cleanup()
-            return
-    
     record_ecg()
     save_data()
     GPIO.cleanup()
-    print("\n\n✓ Recording complete. Exiting.")
-
-
-if __name__ == "__main__":
-    main()
+    print("\nDone.")
