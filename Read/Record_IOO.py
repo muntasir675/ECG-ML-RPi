@@ -1,162 +1,162 @@
-import board
-import busio
-import adafruit_ads1x15.ads1115 as ADS
-from adafruit_ads1x15.analog_in import AnalogIn
-import RPi.GPIO as GPIO
-import csv
-import time
 import os
-import signal
 import sys
+import time
+import csv
+import RPi.GPIO as GPIO
 
-# ---------- CONFIGURATION ----------
-CSV_FILENAME = "Sensor_read.csv"
-TARGET_RATE = 300           # Hz target
-LO_PLUS_PIN = 14  # physical pin 8
-LO_MINUS_PIN = 15 # physical pin 10
-ADS_CHANNEL = 0
-PRINT_INTERVAL = 0.1  # Print every 0.1 seconds
+# --- Configuration ---
+REQUESTED_FREQ = 250      # Target Hertz
+GUARD_DELAY = 0.0005      # 0.5ms delay to prevent stale reads
+LO_PLUS_PIN = 14          # GPIO 14
+LO_MINUS_PIN = 15         # GPIO 15
+CSV_FILENAME = "ecg_data.csv"
+BUFFER_SIZE = 250         # Write every 250 samples (~1s at 250 Hz)
 
-# ---------- STARTUP OPTION ----------
-ignore_leads = False
-user_input = input("Ignore lead disconnects? (y/N): ").strip().lower()
-if user_input == 'y':
-    ignore_leads = True
-    print("⚠️ Will ignore lead disconnects.")
-else:
-    print("✓ Will check leads normally.")
+# ==========================================
+# STEP 1: AUTO-DETECT DRIVER
+# ==========================================
+def find_iio_device(device_name_part="ads1115"):
+    base_path = "/sys/bus/iio/devices"
+    if not os.path.exists(base_path):
+        return None
+    for dirname in os.listdir(base_path):
+        if dirname.startswith("iio:device"):
+            full_path = os.path.join(base_path, dirname)
+            name_file = os.path.join(full_path, "name")
+            if os.path.exists(name_file):
+                with open(name_file, "r") as f:
+                    if device_name_part in f.read().strip().lower():
+                        return full_path
+    return None
 
-# ---------- SETUP ----------
+iio_dev_path = find_iio_device("ads1115")
+if not iio_dev_path:
+    print("❌ ERROR: ADS1115 driver not found!")
+    sys.exit(1)
+print(f"✅ Found ADS1115 at: {iio_dev_path}")
+
+# ==========================================
+# STEP 2: HARDWARE CONFIGURATION
+# ==========================================
+# A. Set Frequency
+freq_path = os.path.join(iio_dev_path, "in_voltage0_sampling_frequency")
+try:
+    if os.path.exists(freq_path):
+        with open(freq_path, "w") as f:
+            f.write(str(REQUESTED_FREQ))
+
+    with open(freq_path, "r") as f:
+        actual_freq = int(f.read().strip())
+
+    print(f"   Requested: {REQUESTED_FREQ} SPS | Actual: {actual_freq} SPS")
+    if actual_freq != REQUESTED_FREQ:
+        print(f"⚠️  Note: Loop adjusted to match hardware ({actual_freq} Hz).")
+
+except Exception as e:
+    print(f"⚠️  Warning: Frequency set failed ({e}). Defaulting to 128 Hz.")
+    actual_freq = 128
+
+# B. Get Scale Factor
+scale_path = os.path.join(iio_dev_path, "in_voltage0_scale")
+try:
+    with open(scale_path, "r") as f:
+        scale_mv = float(f.read().strip())
+except FileNotFoundError:
+    print("⚠️  CRITICAL: Scale file missing! Using unsafe default (0.1875).")
+    scale_mv = 0.1875
+
+# ==========================================
+# STEP 3: GPIO SETUP & CHECK
+# ==========================================
 GPIO.setmode(GPIO.BCM)
-GPIO.setup([LO_MINUS_PIN, LO_PLUS_PIN], GPIO.IN)
+GPIO.setup(LO_PLUS_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(LO_MINUS_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
-i2c = busio.I2C(board.SCL, board.SDA)
-ads = ADS.ADS1115(i2c, address=0x48)
-ads.gain = 2  # ±2.048V range - ideal for AD8232 with 3.3V supply
-ads.data_rate = 860  # Max sampling rate for ADS1115
-ecg_channel = AnalogIn(ads, ADS_CHANNEL)
+print("\n🔌 Checking Electrodes...")
+if GPIO.input(LO_PLUS_PIN) == 1 or GPIO.input(LO_MINUS_PIN) == 1:
+    print("⚠️  WARNING: Electrodes disconnected! (Check LO+ / LO-)")
+else:
+    print("✅ Electrodes Connected.")
 
-# Conversion factor (calculated once to avoid repeated computation)
-# For gain=2: voltage = raw * 2.048 / 32768
-VOLTS_PER_BIT = 2.048 / 32768.0
+# ==========================================
+# STEP 4: CSV SETUP
+# ==========================================
+print(f"\n💾 Saving data to: {CSV_FILENAME}")
+with open(CSV_FILENAME, mode="w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["Timestamp", "LO_plus", "LO_minus", "Raw_ADC", "Voltage_mV"])
 
-# ---------- GLOBAL BUFFERS ----------
-voltage_buffer = []
-raw_buffer = []
-ecg_id = None
-running = True
+data_buffer = []
 
-# ---------- SIGNAL HANDLER ----------
-def cleanup_and_exit(signum, frame):
-    global running
-    running = False
-    print(f"\nCaught signal {signum}. Saving data and cleaning up...")
-    save_data()
-    GPIO.cleanup()
-    print("GPIO cleaned up. Exiting.")
-    sys.exit(0)
+# ==========================================
+# STEP 5: ACQUISITION LOOP
+# ==========================================
+print(f"\nStarting Acquisition at {actual_freq} Hz...")
+print("Press Ctrl+C to stop")
 
-signal.signal(signal.SIGINT, cleanup_and_exit)
-signal.signal(signal.SIGTSTP, cleanup_and_exit)
-signal.signal(signal.SIGTERM, cleanup_and_exit)
+f_adc = open(os.path.join(iio_dev_path, "in_voltage0_raw"), "r")
+period = 1.0 / actual_freq
+next_wakeup = time.time()
+sample_count = 0
 
-# ---------- HELPER FUNCTIONS ----------
-def leads_off():
-    return GPIO.input(LO_PLUS_PIN) or GPIO.input(LO_MINUS_PIN)
+try:
+    while True:
+        # --- 1. PRECISE SLEEP ---
+        now = time.time()
+        sleep_duration = next_wakeup - now
 
-def get_next_ecg_id(filename):
-    if not os.path.exists(filename):
-        return 0
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-        ids = []
-        for line in lines:
-            if line.startswith('v') or line.startswith('r'):
-                try:
-                    ids.append(int(line.split(',')[0][1:]))
-                except:
-                    continue
-        return max(ids) + 1 if ids else 0
+        if sleep_duration > 0:
+            time.sleep(sleep_duration)
+        elif sleep_duration < -period:
+            skipped = int(abs(sleep_duration) / period)
+            next_wakeup += (skipped * period)
+            if skipped > 10:
+                print(f"⚠️ Skipped {skipped} samples")
 
-def init_csv(filename):
-    if not os.path.exists(filename):
-        with open(filename, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(list(range(1000)))
-        print(f"Created CSV file {filename}")
-    else:
-        print(f"Appending to existing CSV file {filename}")
+        # --- 2. GUARD DELAY ---
+        time.sleep(GUARD_DELAY)
 
-def save_data():
-    global voltage_buffer, raw_buffer, ecg_id
-    if voltage_buffer or raw_buffer:
-        with open(CSV_FILENAME, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([f'v{ecg_id}'] + voltage_buffer)
-            writer.writerow([f'r{ecg_id}'] + raw_buffer)
-        print(f"\nSaved {len(voltage_buffer)} samples as v{ecg_id} / r{ecg_id}")
-        voltage_buffer = []
-        raw_buffer = []
+        # --- 3. FAST CAPTURE ---
+        f_adc.seek(0)
+        raw_str = f_adc.read().strip()
+        if not raw_str:
+            next_wakeup += period
+            continue
 
-# ---------- RECORDING FUNCTION ----------
-def record_ecg():
-    global voltage_buffer, raw_buffer, ecg_id, running
-    ecg_id = get_next_ecg_id(CSV_FILENAME)
-    sample_count = 0
-    sampling_delay = 1.0 / TARGET_RATE
-    last_print_time = time.time()
-    start_time = time.time()
+        lo_p = GPIO.input(LO_PLUS_PIN)
+        lo_m = GPIO.input(LO_MINUS_PIN)
+        timestamp = time.time()
 
-    print(f"=== Recording ECG ID {ecg_id} ===")
-    if not ignore_leads:
-        print("Waiting for electrodes to connect...")
-        while leads_off() and running:
-            print("⚠️ Electrodes disconnected! Connect them to start.")
-            time.sleep(1)
-
-    print("✓ Recording started. Press Ctrl+C to stop.")
-    print("⚡ OPTIMIZED: Single I2C read per sample (2x faster)")
-    loop_start = time.time()
-
-    while running:
-        if not ignore_leads and leads_off():
-            print("\n⚠️ Electrodes disconnected! Pausing recording...")
-            while leads_off() and running:
-                time.sleep(0.1)
-            if running:
-                print("✓ Electrodes reconnected. Resuming...")
-                loop_start = time.time()
-
-        # OPTIMIZATION: Only read raw value once (single I2C transaction)
-        raw = ecg_channel.value
-        
-        voltage = raw * VOLTS_PER_BIT
-
-        voltage_buffer.append(voltage)
-        raw_buffer.append(raw)
+        # --- 4. UPDATE TIMING ---
+        next_wakeup += period
         sample_count += 1
 
-        # Print status
-        current_time = time.time()
-        if current_time - last_print_time >= PRINT_INTERVAL:
-            elapsed = current_time - start_time
-            actual_rate = sample_count / elapsed if elapsed > 0 else 0
-            print(f"Samples: {sample_count} | Rate: {actual_rate:.1f} Hz | Last: {voltage:.6f} V", end='\r', flush=True)
-            last_print_time = current_time
+        # --- 5. BUFFER DATA FOR CSV ---
+        try:
+            raw_val = int(raw_str)
+            voltage_mv = raw_val * scale_mv
+            data_buffer.append([timestamp, lo_p, lo_m, raw_val, f"{voltage_mv:.3f}"])
+        except ValueError:
+            continue
 
-        # Timing control
-        next_sample_time = loop_start + (sample_count * sampling_delay)
-        sleep_time = next_sample_time - time.time()
-        if sleep_time > 0:
-            time.sleep(sleep_time)
+        if len(data_buffer) >= BUFFER_SIZE:
+            with open(CSV_FILENAME, mode="a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerows(data_buffer)
+            data_buffer.clear()
 
-# ---------- MAIN ----------
-def main():
-    init_csv(CSV_FILENAME)
-    record_ecg()
-    save_data()
+        # --- 6. DECIMATED TERMINAL OUTPUT ---
+        if sample_count % 50 == 0:
+            ideal_time = next_wakeup - period
+            jitter_ms = (timestamp - ideal_time) * 1000
+            print(f"[{sample_count}] LO+:{lo_p} LO-:{lo_m} | {raw_val} ({voltage_mv:.2f}mV) | Jitter: {jitter_ms:+.2f}ms")
+
+except KeyboardInterrupt:
+    if data_buffer:
+        with open(CSV_FILENAME, mode="a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(data_buffer)
+    print("\nStopped.")
+finally:
+    f_adc.close()
     GPIO.cleanup()
-    print("Exiting.")
-
-if __name__ == "__main__":
-    main()
