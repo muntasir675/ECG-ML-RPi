@@ -6,8 +6,8 @@ import RPi.GPIO as GPIO
 # --- Configuration ---
 REQUESTED_FREQ = 250  # Target Hertz
 GUARD_DELAY = 0.0005  # 0.5ms delay to prevent stale reads
-LO_PLUS_PIN = 14      # GPIO 14
-LO_MINUS_PIN = 15     # GPIO 15
+LO_PLUS_PIN = 23
+LO_MINUS_PIN = 24
 
 # ==========================================
 # STEP 1: AUTO-DETECT DRIVER
