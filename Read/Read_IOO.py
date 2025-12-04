@@ -9,6 +9,18 @@ GUARD_DELAY = 0.0005  # 0.5ms delay to prevent stale reads
 LO_PLUS_PIN = 23
 LO_MINUS_PIN = 24
 
+def force_unexport(pin):
+    path = f"/sys/class/gpio/gpio{pin}"
+    if os.path.exists(path):
+        try:
+            with open("/sys/class/gpio/unexport", "w") as f:
+                f.write(str(pin))
+        except:
+            pass
+
+# Auto-fix “GPIO busy” pins
+force_unexport(23)
+force_unexport(24)
 # ==========================================
 # STEP 1: AUTO-DETECT DRIVER
 # ==========================================
