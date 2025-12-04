@@ -29,7 +29,8 @@ def find_iio_device(device_name_part="ads1115"):
                         return full_path
     return None
 
-iio_dev_path = find_iio_device("ads1115")
+# iio_dev_path = find_iio_device("ads1115")
+iio_dev_path = find_iio_device("ads1015")
 if not iio_dev_path:
     print("❌ ERROR: ADS1115 driver not found!")
     sys.exit(1)
