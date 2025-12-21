@@ -412,9 +412,6 @@ def main():
         features_df = pd.DataFrame([features], columns=column_order)
         features_df.to_csv(args.output, index=False, float_format='%.8f')
         
-        if args.debug:
-            print(f"Features saved: {args.output}")
-        
         # Save points data
         if args.points_output and extractor.waves:
             points_data = []
@@ -431,9 +428,6 @@ def main():
             
             points_df = pd.DataFrame(points_data)
             points_df.to_csv(args.points_output, index=False)
-            
-            if args.debug:
-                print(f"Points saved: {args.points_output}")
         
         # Save processed signal - ADD THIS BLOCK
         if args.processed_output and extractor.processed_signal is not None:
@@ -442,12 +436,6 @@ def main():
                 'Processed_Voltage': extractor.processed_signal
             })
             processed_df.to_csv(args.processed_output, index=False)
-            
-            if args.debug:
-                print(f"Processed signal saved: {args.processed_output}")
-        
-        if args.debug:
-            print("Extraction completed successfully")
         
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
