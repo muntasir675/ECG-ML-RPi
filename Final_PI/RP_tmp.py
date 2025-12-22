@@ -11,7 +11,7 @@ def diagnose_ecg(features_csv, output_csv, model_dir):
     try:
         # Load preprocessing objects
         preprocessing_files = glob.glob(
-            os.path.join(model_dir, 'ecg_preprocessing.pkl')
+            os.path.join(model_dir, 'Models/ecg_preprocessing.pkl')
         )
         if not preprocessing_files:
             raise FileNotFoundError(
@@ -27,7 +27,7 @@ def diagnose_ecg(features_csv, output_csv, model_dir):
 
         # Load model
         model_files = glob.glob(
-            os.path.join(model_dir, 'ecg_random_forest.pkl')
+            os.path.join(model_dir, 'Models/ecg_random_forest.pkl')
         )
         if not model_files:
             raise FileNotFoundError(
