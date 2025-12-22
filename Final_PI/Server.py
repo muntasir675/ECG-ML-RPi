@@ -242,6 +242,7 @@ def extract():
         ], capture_output=True, text=True, timeout=120)
         
         if result.returncode != 0:
+            print(f"Extraction Error: {result.stderr}")
             return jsonify(error=f"Extraction failed: {result.stderr}"), 500
         
         return jsonify(success=True)
@@ -270,6 +271,7 @@ def diagnose():
         ], capture_output=True, text=True, timeout=120)
         
         if result.returncode != 0:
+            print(f"Diagnosis Error: {result.stderr}")
             return jsonify(error=f"Diagnosis failed: {result.stderr}"), 500
         
         return send_file(DIAGNOSIS_FILE, as_attachment=True)
