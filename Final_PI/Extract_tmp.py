@@ -413,20 +413,23 @@ def main():
         features_df.to_csv(args.output, index=False, float_format='%.8f')
         
         # Save points data
-        if args.points_output and extractor.waves:
+        if args.points_output:
             points_data = []
-            for beat_idx, wave_dict in extractor.waves.items():
-                for wave_type, sample_idx in wave_dict.items():
-                    if sample_idx < len(df):
-                        points_data.append({
-                            'beat_index': beat_idx,
-                            'wave_type': wave_type.upper(),
-                            'sample_index': sample_idx,
-                            'timestamp': df.iloc[sample_idx]['Timestamp'],
-                            'voltage': extractor.processed_signal[sample_idx]
-                        })
+            if extractor.waves:
+                for beat_idx, wave_dict in extractor.waves.items():
+                    for wave_type, sample_idx in wave_dict.items():
+                        if sample_idx < len(df):
+                            points_data.append({
+                                'beat_index': beat_idx,
+                                'wave_type': wave_type.upper(),
+                                'sample_index': sample_idx,
+                                'timestamp': df.iloc[sample_idx]['Timestamp'],
+                                'voltage': extractor.processed_signal[sample_idx]
+                            })
             
             points_df = pd.DataFrame(points_data)
+            if points_df.empty:
+                points_df = pd.DataFrame(columns=['beat_index', 'wave_type', 'sample_index', 'timestamp', 'voltage'])
             points_df.to_csv(args.points_output, index=False)
         
         # Save processed signal - ADD THIS BLOCK
