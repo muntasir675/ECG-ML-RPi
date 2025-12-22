@@ -10,12 +10,14 @@ import sys
 def diagnose_ecg(features_csv, output_csv, model_dir):
     try:
         # Load preprocessing objects
-        preprocessing_files = glob.glob(
-            os.path.join(model_dir, 'Models/ecg_preprocessing.pkl')
-        )
+        # Check both 'Models' and 'models' for Linux case sensitivity
+        preprocessing_files = glob.glob(os.path.join(model_dir, 'Models', 'ecg_preprocessing.pkl'))
+        if not preprocessing_files:
+            preprocessing_files = glob.glob(os.path.join(model_dir, 'models', 'ecg_preprocessing.pkl'))
+
         if not preprocessing_files:
             raise FileNotFoundError(
-                f"Preprocessing files not found in {model_dir}"
+                f"Preprocessing files not found in {model_dir} (checked 'Models' and 'models')"
             )
 
         preprocessing_file = sorted(preprocessing_files)[-1]
@@ -26,12 +28,13 @@ def diagnose_ecg(features_csv, output_csv, model_dir):
         train_medians = preprocessing['train_medians']
 
         # Load model
-        model_files = glob.glob(
-            os.path.join(model_dir, 'Models/ecg_random_forest.pkl')
-        )
+        model_files = glob.glob(os.path.join(model_dir, 'Models', 'ecg_random_forest.pkl'))
+        if not model_files:
+            model_files = glob.glob(os.path.join(model_dir, 'models', 'ecg_random_forest.pkl'))
+
         if not model_files:
             raise FileNotFoundError(
-                f"Model file not found in {model_dir}"
+                f"Model file not found in {model_dir} (checked 'Models' and 'models')"
             )
 
         model_file = sorted(model_files)[-1]

@@ -127,7 +127,7 @@ def start_recording():
             # Start Record_IOO_n.py with duration 0 (infinite)
             script_path = os.path.join(SCRIPT_DIR, "Record_IOO_n.py")
             recording_process = subprocess.Popen(
-                [sys.executable, script_path, "--duration", "0", "--no-sdn"],
+                [sys.executable, script_path, "--duration", "0"],
                 cwd=SCRIPT_DIR
             )
 
@@ -239,7 +239,7 @@ def extract():
             "--output", FEATURES_FILE,
             "--points-output", POINTS_FILE,
             "--processed-output", PROCESSED_ECG_FILE
-        ], capture_output=True, text=True, timeout=60)
+        ], capture_output=True, text=True, timeout=120)
         
         if result.returncode != 0:
             return jsonify(error=f"Extraction failed: {result.stderr}"), 500
@@ -267,7 +267,7 @@ def diagnose():
             "--input", FEATURES_FILE,
             "--output", DIAGNOSIS_FILE,
             "--model-dir", MODEL_DIR
-        ], capture_output=True, text=True, timeout=60)
+        ], capture_output=True, text=True, timeout=120)
         
         if result.returncode != 0:
             return jsonify(error=f"Diagnosis failed: {result.stderr}"), 500

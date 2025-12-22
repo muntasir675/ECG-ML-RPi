@@ -63,13 +63,9 @@ def find_iio_device(device_name_part="ads1015"):
 def initialize_hardware():
     global iio_dev_path, actual_freq, scale_mv
 
-    # Try to find ADS1115 first, then fall back to ADS1015
-    iio_dev_path = find_iio_device("ads1115")
+    iio_dev_path = find_iio_device("ads1015")
     if not iio_dev_path:
-        iio_dev_path = find_iio_device("ads1015")
-
-    if not iio_dev_path:
-        raise Exception("ADS1015/ADS1115 IIO driver not found! Make sure the overlay is enabled in /boot/config.txt (e.g., dtoverlay=ads1115).")
+        raise Exception("ADS1015 IIO driver not found!")
 
     # Configure frequency
     freq_path = os.path.join(iio_dev_path, "in_voltage0_sampling_frequency")
@@ -254,15 +250,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Record ECG')
     parser.add_argument('--duration', type=float, default=10, help='Duration in seconds (0 for infinite)')
     parser.add_argument('--output', type=str, default=None, help='Output filename')
-    parser.add_argument('--no-sdn', action='store_true', help='Do not control SDN (GPIO 25) pin')
     args = parser.parse_args()
 
     # Setup GPIO for standalone testing
     GPIO.setmode(GPIO.BCM)
     try:
         # Power on the ADC if testing standalone (assuming SDN is on GPIO 25)
-        if not args.no_sdn:
-            GPIO.setup(25, GPIO.OUT, initial=GPIO.HIGH)
+        GPIO.setup(25, GPIO.OUT, initial=GPIO.HIGH)
         initialize_hardware()
         filename = record_ecg(duration=args.duration, output_filename=args.output)
     finally:
