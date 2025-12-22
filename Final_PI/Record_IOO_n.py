@@ -63,9 +63,13 @@ def find_iio_device(device_name_part="ads1015"):
 def initialize_hardware():
     global iio_dev_path, actual_freq, scale_mv
 
-    iio_dev_path = find_iio_device("ads1015")
+    # Try to find ADS1115 first, then fall back to ADS1015
+    iio_dev_path = find_iio_device("ads1115")
     if not iio_dev_path:
-        raise Exception("ADS1015 IIO driver not found!")
+        iio_dev_path = find_iio_device("ads1015")
+
+    if not iio_dev_path:
+        raise Exception("ADS1015/ADS1115 IIO driver not found! Make sure the overlay is enabled in /boot/config.txt (e.g., dtoverlay=ads1115).")
 
     # Configure frequency
     freq_path = os.path.join(iio_dev_path, "in_voltage0_sampling_frequency")
