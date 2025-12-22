@@ -127,7 +127,7 @@ def start_recording():
             # Start Record_IOO_n.py with duration 0 (infinite)
             script_path = os.path.join(SCRIPT_DIR, "Record_IOO_n.py")
             recording_process = subprocess.Popen(
-                [sys.executable, script_path, "--duration", "0"],
+                [sys.executable, script_path, "--duration", "0", "--no-sdn"],
                 cwd=SCRIPT_DIR
             )
 
