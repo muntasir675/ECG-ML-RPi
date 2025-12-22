@@ -250,13 +250,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Record ECG')
     parser.add_argument('--duration', type=float, default=10, help='Duration in seconds (0 for infinite)')
     parser.add_argument('--output', type=str, default=None, help='Output filename')
+    parser.add_argument('--no-sdn', action='store_true', help='Do not control SDN (GPIO 25) pin')
     args = parser.parse_args()
 
     # Setup GPIO for standalone testing
     GPIO.setmode(GPIO.BCM)
     try:
         # Power on the ADC if testing standalone (assuming SDN is on GPIO 25)
-        GPIO.setup(25, GPIO.OUT, initial=GPIO.HIGH)
+        if not args.no_sdn:
+            GPIO.setup(25, GPIO.OUT, initial=GPIO.HIGH)
         initialize_hardware()
         filename = record_ecg(duration=args.duration, output_filename=args.output)
     finally:
