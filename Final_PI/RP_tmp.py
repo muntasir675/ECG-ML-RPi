@@ -5,10 +5,17 @@ import glob
 import os
 import argparse
 import sys
+import sklearn
+import platform
 
 
 def diagnose_ecg(features_csv, output_csv, model_dir):
     try:
+        # Add diagnostic prints to help debug version/platform issues
+        print(f"--- Diagnosis Script ---", file=sys.stderr)
+        print(f"Platform: {platform.platform()}", file=sys.stderr)
+        print(f"scikit-learn version: {sklearn.__version__}", file=sys.stderr)
+
         # Load preprocessing objects
         preprocessing_files = glob.glob(
             os.path.join(model_dir, 'Models/ecg_preprocessing.pkl')
@@ -43,6 +50,11 @@ def diagnose_ecg(features_csv, output_csv, model_dir):
 
         # Load features
         df = pd.read_csv(features_csv)
+        # Fail fast if the feature extraction produced an empty file
+        if df.empty:
+            raise ValueError(
+                "Features file is empty (no data rows). Cannot perform diagnosis."
+            )
         df_input = df.drop(columns=['RECORD', 'ECG_signal'], errors='ignore')
 
         # Fill missing values
