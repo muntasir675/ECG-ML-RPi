@@ -20,7 +20,7 @@ Portable cardiac condition diagnosis using machine learning on Raspberry Pi.
 
 *AD8232 → RC filter → ADS1115 ADC → Raspberry Pi → Flutter app*
 
-<img src="docs/figures/fig-11-server-pipeline.png" width="60%">
+<img src="docs/figures/fig-11-server-pipeline.png" width="40%">
 
 *Server workflow: recording → feature extraction → ML inference → diagnosis*
 
@@ -73,7 +73,7 @@ The AD8232 single-lead ECG amplifier feeds into a RC filter circuit providing ba
 
 The frequency response compares three filter configurations: without bias, with bias, and with bias and an additional capacitor — showing how the bias network shifts the passband characteristic.
 
-<img src="docs/figures/fig-04-frequency-response.png" width="80%">
+<img src="docs/figures/fig-04-frequency-response.png" width="55%">
 
 ### PCB designs
 
