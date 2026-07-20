@@ -2,21 +2,47 @@ import os
 import sys
 import time
 import csv
+import json
+import signal
+import argparse
 from datetime import datetime
-import RPi.GPIO as GPIO
 
-# --- Configuration ---
-REQUESTED_FREQ = 250      # Target Hertz
-GUARD_DELAY = 0.0005      # 0.5ms delay to prevent stale reads
-LO_PLUS_PIN = 23
-LO_MINUS_PIN = 24
-CSV_FILENAME = f"ecg_data_{datetime.now().strftime('%d-%m-%Y_at_%I-%M%p')}.csv"
-BUFFER_SIZE = 250         # Write every 250 samples (~1s at 250 Hz)
+try:
+    import RPi.GPIO as GPIO
+except (RuntimeError, ImportError):
+    class MockGPIO:
+        BCM = None
+        OUT = None
+        IN = None
+        HIGH = None
+        LOW = None
+        PUD_DOWN = None
+        def setmode(self, *args, **kwargs): pass
+        def setup(self, *args, **kwargs): pass
+        def output(self, *args, **kwargs): pass
+        def input(self, *args, **kwargs): return 0
+        def cleanup(self, *args, **kwargs): pass
+    GPIO = MockGPIO()
 
-# ==========================================
-# STEP 1: AUTO-DETECT DRIVER
-# ==========================================
-def find_iio_device(device_name_part="ads1115"):
+REQUESTED_FREQ = 250
+GUARD_DELAY = 0.0005
+LO_PLUS_PIN = 24
+LO_MINUS_PIN = 23
+BUFFER_SIZE = 250
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+STATUS_FILE = os.path.join(SCRIPT_DIR, "recording_status.json")
+
+iio_dev_path = None
+actual_freq = None
+scale_mv = None
+stop_requested = False
+
+def signal_handler(signum, frame):
+    global stop_requested
+    stop_requested = True
+
+def find_iio_device(device_name_part="ads1015"):
     base_path = "/sys/bus/iio/devices"
     if not os.path.exists(base_path):
         return None
@@ -30,126 +56,141 @@ def find_iio_device(device_name_part="ads1115"):
                         return full_path
     return None
 
-iio_dev_path = find_iio_device("ads1015")
-if not iio_dev_path:
-    print("❌ ERROR: ADS1115 driver not found!")
-    sys.exit(1)
-print(f"✅ Found ADS1115 at: {iio_dev_path}")
-
-# ==========================================
-# STEP 2: HARDWARE CONFIGURATION
-# ==========================================
-freq_path = os.path.join(iio_dev_path, "in_voltage0_sampling_frequency")
-try:
-    if os.path.exists(freq_path):
+def initialize_hardware():
+    global iio_dev_path, actual_freq, scale_mv
+    iio_dev_path = find_iio_device("ads1015")
+    if not iio_dev_path:
+        raise Exception("ADS1015 IIO driver not found!")
+    freq_path = os.path.join(iio_dev_path, "in_voltage0_sampling_frequency")
+    freq_avail_path = os.path.join(iio_dev_path, "in_voltage0_sampling_frequency_available")
+    if not os.path.exists(freq_path):
+        raise IOError(f"Sampling frequency file not found at {freq_path}")
+    try:
         with open(freq_path, "w") as f:
             f.write(str(REQUESTED_FREQ))
-
-    with open(freq_path, "r") as f:
-        actual_freq = int(f.read().strip())
-
-    print(f"   Requested: {REQUESTED_FREQ} SPS | Actual: {actual_freq} SPS")
+        with open(freq_path, "r") as f:
+            actual_freq = int(f.read().strip())
+    except Exception as e:
+        available = "Not found"
+        if os.path.exists(freq_avail_path):
+            with open(freq_avail_path, 'r') as f_avail:
+                available = f_avail.read().strip()
+        raise IOError(f"Failed to set sampling frequency. Error: {e}. Available: {available}")
     if actual_freq != REQUESTED_FREQ:
-        print(f"⚠️  Note: Loop adjusted to match hardware ({actual_freq} Hz).")
+        available = "Not found"
+        if os.path.exists(freq_avail_path):
+            with open(freq_avail_path, 'r') as f_avail:
+                available = f_avail.read().strip()
+        raise ValueError(f"Driver rejected {REQUESTED_FREQ}Hz. Actual is {actual_freq}Hz. Available: {available}")
+    scale_path = os.path.join(iio_dev_path, "in_voltage0_scale")
+    try:
+        with open(scale_path, "r") as f:
+            scale_mv = float(f.read().strip())
+    except (FileNotFoundError, ValueError) as e:
+        raise IOError(f"Could not read a valid ADC scale from {scale_path}: {e}")
+    GPIO.setup(LO_PLUS_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    GPIO.setup(LO_MINUS_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    return actual_freq, scale_mv
 
-except Exception as e:
-    print(f"⚠️  Warning: Frequency set failed ({e}). Defaulting to 128 Hz.")
-    actual_freq = 128
+def check_lead_status():
+    lo_p = GPIO.input(LO_PLUS_PIN)
+    lo_m = GPIO.input(LO_MINUS_PIN)
+    return {'lo_plus': lo_p, 'lo_minus': lo_m, 'disconnected': lo_p == 1 or lo_m == 1}
 
-scale_path = os.path.join(iio_dev_path, "in_voltage0_scale")
-try:
-    with open(scale_path, "r") as f:
-        scale_mv = float(f.read().strip())
-except FileNotFoundError:
-    print("⚠️  CRITICAL: Scale file missing! Using unsafe default (0.1875).")
-    scale_mv = 0.1875
+def update_live_status(lead_status):
+    try:
+        with open(STATUS_FILE, 'w') as f:
+            json.dump({"connected": not lead_status['disconnected'], "lo_plus": lead_status['lo_plus'], "lo_minus": lead_status['lo_minus']}, f)
+    except Exception:
+        pass
 
-# ==========================================
-# STEP 3: GPIO SETUP & CHECK
-# ==========================================
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(LO_PLUS_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(LO_MINUS_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-
-print("\n🔌 Checking Electrodes...")
-if GPIO.input(LO_PLUS_PIN) == 1 or GPIO.input(LO_MINUS_PIN) == 1:
-    print("⚠️  WARNING: Electrodes disconnected! (Check LO+ / LO-)")
-else:
-    print("✅ Electrodes Connected.")
-
-# ==========================================
-# STEP 4: CSV SETUP
-# ==========================================
-print(f"\n💾 Saving data to: {CSV_FILENAME}")
-with open(CSV_FILENAME, mode="w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["Timestamp", "LO_plus", "LO_minus", "Raw_ADC", "Voltage_mV"])
-
-data_buffer = []
-
-# ==========================================
-# STEP 5: ACQUISITION LOOP
-# ==========================================
-print(f"\nStarting Acquisition at {actual_freq} Hz...")
-print("Press Ctrl+C to stop")
-
-f_adc = open(os.path.join(iio_dev_path, "in_voltage0_raw"), "r")
-period = 1.0 / actual_freq
-next_wakeup = time.time()
-sample_count = 0
-
-try:
-    while True:
-        now = time.time()
-        sleep_duration = next_wakeup - now
-
-        if sleep_duration > 0:
-            time.sleep(sleep_duration)
-        elif sleep_duration < -period:
-            skipped = int(abs(sleep_duration) / period)
-            next_wakeup += (skipped * period)
-            if skipped > 10:
-                print(f"⚠️ Skipped {skipped} samples")
-
-        time.sleep(GUARD_DELAY)
-
-        f_adc.seek(0)
-        raw_str = f_adc.read().strip()
-        if not raw_str:
+def record_ecg(duration=0, output_filename=None):
+    global iio_dev_path, actual_freq, scale_mv
+    if not iio_dev_path:
+        initialize_hardware()
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    if output_filename is None:
+        timestamped_filename = f"ecg_data_{datetime.now().strftime('%d-%m-%Y_at_%I-%M%p')}.csv"
+        output_filepath = os.path.join(SCRIPT_DIR, timestamped_filename)
+    else:
+        output_filepath = os.path.join(SCRIPT_DIR, output_filename)
+    lead_status = check_lead_status()
+    update_live_status(lead_status)
+    with open(output_filepath, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Timestamp", "LO_plus", "LO_minus", "Raw_ADC", "Voltage_mV"])
+    data_buffer = []
+    f_adc = open(os.path.join(iio_dev_path, "in_voltage0_raw"), "r")
+    period = 1.0 / actual_freq
+    next_wakeup = time.time()
+    sample_count = 0
+    start_time = time.time()
+    error_occurred = False
+    try:
+        while not stop_requested and (duration <= 0 or (time.time() - start_time) < duration):
+            now = time.time()
+            sleep_duration = next_wakeup - now
+            if sleep_duration > 0:
+                time.sleep(sleep_duration)
+            elif sleep_duration < -period:
+                skipped = int(abs(sleep_duration) / period)
+                next_wakeup += (skipped * period)
+            f_adc.seek(0)
+            raw_str = f_adc.read().strip()
+            if not raw_str:
+                next_wakeup += period
+                continue
+            lo_p = GPIO.input(LO_PLUS_PIN)
+            lo_m = GPIO.input(LO_MINUS_PIN)
+            timestamp = time.time() - start_time
             next_wakeup += period
-            continue
-
-        lo_p = GPIO.input(LO_PLUS_PIN)
-        lo_m = GPIO.input(LO_MINUS_PIN)
-        timestamp = time.time()
-
-        next_wakeup += period
-        sample_count += 1
-
-        try:
-            raw_val = int(raw_str)
-            voltage_mv = raw_val * scale_mv
-            data_buffer.append([timestamp, lo_p, lo_m, raw_val, f"{voltage_mv:.3f}"])
-        except ValueError:
-            continue
-
-        if len(data_buffer) >= BUFFER_SIZE:
-            with open(CSV_FILENAME, mode="a", newline="") as f:
+            sample_count += 1
+            try:
+                raw_val = int(raw_str)
+                voltage_mv = raw_val * scale_mv
+                data_buffer.append([timestamp, lo_p, lo_m, raw_val, f"{voltage_mv:.3f}"])
+            except ValueError:
+                continue
+            if len(data_buffer) >= BUFFER_SIZE:
+                with open(output_filepath, mode="a", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerows(data_buffer)
+                data_buffer.clear()
+            if sample_count % 250 == 0:
+                update_live_status({'disconnected': lo_p == 1 or lo_m == 1, 'lo_plus': lo_p, 'lo_minus': lo_m})
+        if data_buffer:
+            with open(output_filepath, mode="a", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerows(data_buffer)
-            data_buffer.clear()
+        return output_filepath
+    except Exception as e:
+        error_occurred = True
+        try:
+            with open(STATUS_FILE, 'w') as f:
+                json.dump({"recording": False, "error": str(e)}, f)
+        except Exception:
+            pass
+        raise
+    finally:
+        f_adc.close()
+        if not error_occurred and os.path.exists(STATUS_FILE):
+            os.remove(STATUS_FILE)
 
-        if sample_count % 50 == 0:
-            ideal_time = next_wakeup - period
-            jitter_ms = (timestamp - ideal_time) * 1000
-            print(f"[{sample_count}] LO+:{lo_p} LO-:{lo_m} | {raw_val} ({voltage_mv:.2f}mV) | Jitter: {jitter_ms:+.2f}ms")
-
-except KeyboardInterrupt:
-    if data_buffer:
-        with open(CSV_FILENAME, mode="a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerows(data_buffer)
-    print("\nStopped.")
-finally:
-    f_adc.close()
+def cleanup():
     GPIO.cleanup()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Record ECG')
+    parser.add_argument('--duration', type=float, default=10, help='Duration in seconds (0 for infinite)')
+    parser.add_argument('--output', type=str, default=None, help='Output filename')
+    parser.add_argument('--no-sdn', action='store_true', help='Do not control SDN pin')
+    args = parser.parse_args()
+    GPIO.setmode(GPIO.BCM)
+    try:
+        if not args.no_sdn:
+            GPIO.setup(25, GPIO.OUT, initial=GPIO.HIGH)
+        initialize_hardware()
+        filename = record_ecg(duration=args.duration, output_filename=args.output)
+    finally:
+        GPIO.cleanup()

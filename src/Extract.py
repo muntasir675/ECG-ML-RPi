@@ -1,23 +1,22 @@
+"""
+ECG Feature Extractor - Simplified version for production
+"""
 import numpy as np
 import pandas as pd
-from scipy import signal
 from scipy.signal import find_peaks, butter, filtfilt
 from scipy.spatial.distance import euclidean
-import pywt
 import warnings
+import argparse
+import sys
+
 warnings.filterwarnings('ignore')
 
-DATASET_PATH = '/home/pi/Desktop/raspi-files/Extract/ecg_signal_rows.csv'
-SAMPLE_INDEX = 1
-SAMPLING_RATE = 100
-GAIN = 1.0
-LEAD_COLUMN = 'lead_1'
-OUTPUT_CSV_PATH = '/home/pi/Desktop/raspi-files/Random_forest/ecg_features_output.csv'
-
 class ECGFeatureExtractor:
-    def __init__(self, sampling_rate=100):
+    def __init__(self, sampling_rate=250):
         self.fs = sampling_rate
         self.features = {}
+        self.processed_signal = None
+        self.waves = None
 
     def bandpass_filter(self, signal_data, lowcut=0.5, highcut=40):
         nyquist = 0.5 * self.fs
@@ -32,9 +31,9 @@ class ECGFeatureExtractor:
 
     def detect_r_peaks(self, ecg_signal):
         peaks, properties = find_peaks(ecg_signal,
-                                     height=np.std(ecg_signal) * 0.5,
-                                     distance=int(0.4 * self.fs),
-                                     prominence=np.std(ecg_signal) * 0.3)
+                                      height=np.std(ecg_signal) * 0.5,
+                                      distance=int(0.4 * self.fs),
+                                      prominence=np.std(ecg_signal) * 0.3)
         return peaks
 
     def detect_ecg_waves(self, ecg_signal, r_peaks):
@@ -155,26 +154,34 @@ class ECGFeatureExtractor:
                 q_idx = wave_dict['Q']
                 r_idx = wave_dict['R']
                 s_idx = wave_dict['S']
+
                 x_coords = [q_idx, r_idx, s_idx]
                 y_coords = [ecg_signal[q_idx], ecg_signal[r_idx], ecg_signal[s_idx]]
+
                 area = 0.5 * abs(sum(x_coords[i] * y_coords[(i + 1) % 3] -
-                                   x_coords[(i + 1) % 3] * y_coords[i] for i in range(3)))
+                                    x_coords[(i + 1) % 3] * y_coords[i] for i in range(3)))
+
                 qr_dist = euclidean([q_idx, ecg_signal[q_idx]], [r_idx, ecg_signal[r_idx]])
                 rs_dist = euclidean([r_idx, ecg_signal[r_idx]], [s_idx, ecg_signal[s_idx]])
                 qs_dist = euclidean([q_idx, ecg_signal[q_idx]], [s_idx, ecg_signal[s_idx]])
                 perimeter = qr_dist + rs_dist + qs_dist
+
                 qrs_features[beat_idx] = {'QRSarea': area, 'QRSperi': perimeter}
         return qrs_features
 
     def extract_features(self, ecg_signal, gain=1.0):
         filtered_signal = self.bandpass_filter(ecg_signal)
         normalized_signal = self.normalize_signal(filtered_signal, gain)
+
+        self.processed_signal = normalized_signal
         r_peaks = self.detect_r_peaks(normalized_signal)
 
         if len(r_peaks) < 2:
             return self._get_default_features()
 
         waves = self.detect_ecg_waves(normalized_signal, r_peaks)
+        self.waves = waves
+
         rr_intervals = np.diff(r_peaks) / self.fs * 1000
 
         features = {}
@@ -274,10 +281,8 @@ class ECGFeatureExtractor:
                 durations['QRtoQSdur'].append(qr_dur / qs_dur if qs_dur != 0 else 0)
                 rs_dur = abs(wave_dict['S'] - wave_dict['R']) / self.fs
                 durations['RStoQSdur'].append(rs_dur / qs_dur if qs_dur != 0 else 0)
-        return {
-            'QRtoQSdur': np.mean(durations['QRtoQSdur']) if len(durations['QRtoQSdur']) > 0 else 0,
-            'RStoQSdur': np.mean(durations['RStoQSdur']) if len(durations['RStoQSdur']) > 0 else 0
-        }
+        return {'QRtoQSdur': np.mean(durations['QRtoQSdur']) if len(durations['QRtoQSdur']) > 0 else 0,
+                'RStoQSdur': np.mean(durations['RStoQSdur']) if len(durations['RStoQSdur']) > 0 else 0}
 
     def _calculate_hrv_features(self, rr_intervals):
         if len(rr_intervals) < 2:
@@ -325,127 +330,71 @@ class ECGFeatureExtractor:
         return {name: 0 for name in feature_names}
 
 
-def load_ecg_data(csv_path, sample_index, lead_column='lead_1'):
-    print(f"Loading data from: {csv_path}")
-    print(f"Loading only sample #{sample_index}...")
-    df = pd.read_csv(csv_path)
-    if sample_index >= len(df):
-        raise ValueError(f"Sample index {sample_index} out of range. Available: 0-{len(df)-1}")
-    row = df.iloc[sample_index]
-    target_id = row.iloc[0]
-    signal_data = row.iloc[1:].tolist()
-    print(f"Loaded ECG ID: {target_id} with {len(signal_data)} samples")
-    return signal_data, target_id
+def main():
+    parser = argparse.ArgumentParser(description='ECG Feature Extractor')
+    parser.add_argument('--input', required=True, help='Input CSV file')
+    parser.add_argument('--output', required=True, help='Output features CSV')
+    parser.add_argument('--points-output', help='Output points CSV')
+    parser.add_argument('--processed-output', help='Output processed ECG CSV')
+    parser.add_argument('--sampling-rate', type=int, default=250)
+    parser.add_argument('--gain', type=float, default=1.0)
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
 
+    args = parser.parse_args()
 
-def save_features_to_csv(features, output_path, record_id=None):
-    if record_id is not None:
-        features['RECORD'] = record_id
-    column_order = [
-        'RECORD', 'hbpermin', 'Pseg', 'PQseg', 'QRSseg', 'QRseg', 'QTseg', 'RSseg', 'STseg', 'Tseg',
-        'PTseg', 'ECGseg', 'QRtoQSdur', 'RStoQSdur', 'RRmean', 'PPmean', 'PQdis', 'PonQdis', 'PRdis',
-        'PonRdis', 'PSdis', 'PonSdis', 'PTdis', 'PonTdis', 'PToffdis', 'QRdis', 'QSdis', 'QTdis',
-        'QToffdis', 'RSdis', 'RTdis', 'RToffdis', 'STdis', 'SToffdis', 'PonToffdis', 'PonPQang',
-        'PQRang', 'QRSang', 'RSTang', 'STToffang', 'RRTot', 'NNTot', 'SDRR', 'IBIM', 'IBISD', 'SDSD',
-        'RMSSD', 'QRSarea', 'QRSperi', 'PQslope', 'QRslope', 'RSslope', 'STslope', 'NN50', 'pNN50'
-    ]
-    for col in column_order:
-        if col not in features:
-            features[col] = 0
-    df = pd.DataFrame([features], columns=column_order)
-    df.to_csv(output_path, index=False, float_format='%.8f')
-    print(f"\nFeatures saved to: {output_path}")
-    print(f"CSV shape: {df.shape}")
-    return df
+    try:
+        df = pd.read_csv(args.input)
+        signal_data = df['Voltage_mV'].tolist() if 'Voltage_mV' in df.columns else df['Raw_ADC'].tolist()
 
+        extractor = ECGFeatureExtractor(sampling_rate=args.sampling_rate)
+        features = extractor.extract_features(signal_data, gain=args.gain)
 
-def process_ecg_dataset(ecg_data, sampling_rate=100, gain=1.0):
-    extractor = ECGFeatureExtractor(sampling_rate)
-    if isinstance(ecg_data, pd.DataFrame):
-        features_list = []
-        for idx, row in ecg_data.iterrows():
-            if isinstance(row.iloc[0], (list, tuple, np.ndarray)):
-                signal = np.array(row.iloc[0])
-            else:
-                signal = row.values
-            features = extractor.extract_features(signal, gain)
-            features['sample_id'] = idx
-            features_list.append(features)
-        return pd.DataFrame(features_list)
-    elif isinstance(ecg_data, np.ndarray):
-        if ecg_data.ndim == 1:
-            features = extractor.extract_features(ecg_data, gain)
-            return pd.DataFrame([features])
-        else:
-            features_list = []
-            for i, signal in enumerate(ecg_data):
-                features = extractor.extract_features(signal, gain)
-                features['sample_id'] = i
-                features_list.append(features)
-            return pd.DataFrame(features_list)
-    else:
-        raise ValueError("ecg_data must be numpy array or pandas DataFrame")
+        column_order = [
+            'RECORD', 'hbpermin', 'Pseg', 'PQseg', 'QRSseg', 'QRseg', 'QTseg', 'RSseg', 'STseg', 'Tseg',
+            'PTseg', 'ECGseg', 'QRtoQSdur', 'RStoQSdur', 'RRmean', 'PPmean', 'PQdis', 'PonQdis', 'PRdis',
+            'PonRdis', 'PSdis', 'PonSdis', 'PTdis', 'PonTdis', 'PToffdis', 'QRdis', 'QSdis', 'QTdis',
+            'QToffdis', 'RSdis', 'RTdis', 'RToffdis', 'STdis', 'SToffdis', 'PonToffdis', 'PonPQang',
+            'PQRang', 'QRSang', 'RSTang', 'STToffang', 'RRTot', 'NNTot', 'SDRR', 'IBIM', 'IBISD', 'SDSD',
+            'RMSSD', 'QRSarea', 'QRSperi', 'PQslope', 'QRslope', 'RSslope', 'STslope', 'NN50', 'pNN50'
+        ]
 
+        features['RECORD'] = 1
+        for col in column_order:
+            if col not in features:
+                features[col] = 0
 
-def extract_from_file(input_path, output_path, points_path, processed_path):
-    df = pd.read_csv(input_path)
-    if df.empty:
-        print("Input file is empty")
-        return False
+        features_df = pd.DataFrame([features], columns=column_order)
+        features_df.to_csv(args.output, index=False, float_format='%.8f')
 
-    ecg_signal = df.iloc[0, 1:].values if df.shape[1] > 1 else df.iloc[:, 0].values
-    ecg_signal = np.array(ecg_signal, dtype=float)
+        if args.points_output:
+            points_data = []
+            if extractor.waves:
+                for beat_idx, wave_dict in extractor.waves.items():
+                    for wave_type, sample_idx in wave_dict.items():
+                        if sample_idx < len(df):
+                            points_data.append({
+                                'beat_index': beat_idx,
+                                'wave_type': wave_type.upper(),
+                                'sample_index': sample_idx,
+                                'timestamp': df.iloc[sample_idx]['Timestamp'],
+                                'voltage': extractor.processed_signal[sample_idx]
+                            })
+            points_df = pd.DataFrame(points_data)
+            if points_df.empty:
+                points_df = pd.DataFrame(columns=['beat_index', 'wave_type', 'sample_index', 'timestamp', 'voltage'])
+            points_df.to_csv(args.points_output, index=False)
 
-    extractor = ECGFeatureExtractor(sampling_rate=SAMPLING_RATE)
-    features = extractor.extract_features(ecg_signal, gain=GAIN)
+        if args.processed_output and extractor.processed_signal is not None:
+            processed_df = pd.DataFrame({
+                'Timestamp': df['Timestamp'].values,
+                'Processed_Voltage': extractor.processed_signal
+            })
+            processed_df.to_csv(args.processed_output, index=False)
 
-    features_df = save_features_to_csv(features, output_path, record_id=1)
-
-    if points_path:
-        points_df = pd.DataFrame({'sample': range(len(ecg_signal)), 'value': ecg_signal})
-        points_df.to_csv(points_path, index=False)
-        print(f"Points saved to: {points_path}")
-
-    if processed_path:
-        processed_signal = extractor.bandpass_filter(ecg_signal)
-        processed_df = pd.DataFrame({'sample': range(len(processed_signal)), 'value': processed_signal})
-        processed_df.to_csv(processed_path, index=False)
-        print(f"Processed ECG saved to: {processed_path}")
-
-    print(f"Extraction complete. Features shape: {features_df.shape}")
-    return True
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description='ECG Feature Extraction')
-    parser.add_argument('--input', required=True, help='Input ECG CSV path')
-    parser.add_argument('--output', required=True, help='Output features CSV path')
-    parser.add_argument('--points-output', help='Output points CSV path (optional)')
-    parser.add_argument('--processed-output', help='Output processed ECG CSV path (optional)')
-    args = parser.parse_args()
-
-    if args.input:
-        extract_from_file(args.input, args.output, args.points_output, args.processed_output)
-    else:
-        print("=" * 70)
-        print("ECG FEATURE EXTRACTOR - RASPBERRY PI")
-        print("=" * 70)
-        ecg_signal, ecg_id = load_ecg_data(DATASET_PATH, SAMPLE_INDEX, LEAD_COLUMN)
-        print(f"\nAnalyzing ECG ID: {ecg_id}")
-        print(f"Signal length: {len(ecg_signal)} samples")
-        print(f"Duration: {len(ecg_signal) / SAMPLING_RATE:.2f} seconds")
-        print("\nExtracting features...")
-        extractor = ECGFeatureExtractor(sampling_rate=SAMPLING_RATE)
-        features = extractor.extract_features(ecg_signal, gain=GAIN)
-        print("\n" + "=" * 70)
-        print("EXTRACTED ECG FEATURES")
-        print("=" * 70)
-        max_name_length = max(len(name) for name in features.keys())
-        for feature_name, value in features.items():
-            print(f"{feature_name:<{max_name_length}} : {value:>12.4f}")
-        features_df = save_features_to_csv(features, OUTPUT_CSV_PATH, record_id=1)
-        print("\n" + "=" * 70)
-        print(f"Feature DataFrame shape : {features_df.shape}")
-        print(f"Total features extracted: {len(features)}")
-        print("=" * 70)
+    main()

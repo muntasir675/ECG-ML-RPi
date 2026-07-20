@@ -229,9 +229,9 @@ def extract():
         if not os.path.exists(input_file):
             return jsonify(error="ECG file missing"), 404
         
-        script_path = os.path.join(SCRIPT_DIR, "Extract_tmp.py")
+        script_path = os.path.join(SCRIPT_DIR, "Extract.py")
         if not os.path.exists(script_path):
-            return jsonify(error="Extract_tmp.py not found"), 404
+            return jsonify(error="Extract.py not found"), 404
         
         result = subprocess.run([
             sys.executable, script_path,
@@ -256,9 +256,9 @@ def diagnose():
         if not os.path.exists(FEATURES_FILE):
             return jsonify(error="Features file missing"), 404
         
-        script_path = os.path.join(SCRIPT_DIR, "RP_tmp.py")
+        script_path = os.path.join(SCRIPT_DIR, "RP.py")
         if not os.path.exists(script_path):
-            return jsonify(error="RP_tmp.py not found"), 404
+            return jsonify(error="RP.py not found"), 404
         
         # The model files are in the same directory as the scripts.
         MODEL_DIR = SCRIPT_DIR
