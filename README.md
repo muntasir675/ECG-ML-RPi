@@ -16,7 +16,7 @@ Portable cardiac condition diagnosis using machine learning on Raspberry Pi.
 
 ## System Architecture
 
-<img src="docs/figures/fig-01-system-block-diagram.png" width="70%">
+<img src="docs/figures/fig-01-system-block-diagram.png" width="50%">
 
 *AD8232 → RC filter → ADS1115 ADC → Raspberry Pi → Flutter app*
 
@@ -69,9 +69,9 @@ Zero-phase Butterworth filter (0.5–40 Hz) + 50 Hz notch removes out-of-band no
 
 The AD8232 single-lead ECG amplifier feeds into a RC filter circuit providing band-pass filtering (~0.5–50 Hz) and biasing to a baseline of ~1.5v.
 
-<img src="docs/figures/fig-02-schematic.png" width="80%">
+<img src="docs/figures/fig-02-schematic.png" width="60%">
 
-*Full system circuit schematic (AD8232, RC filter, ADS1115, Raspberry Pi)*
+The frequency response compares three filter configurations: without bias, with bias, and with bias and an additional capacitor — showing how the bias network shifts the passband characteristic.
 
 <img src="docs/figures/fig-04-frequency-response.png" width="80%">
 
@@ -83,9 +83,9 @@ The AD8232 single-lead ECG amplifier feeds into a RC filter circuit providing ba
 | Single-layer PCB | Toner-transfer etched — reduced noise |
 | Double-layer PCB | Fabricated — continuous ground plane, direct header mount, best noise performance |
 
-<img src="docs/figures/fig-13-single-layer-pcb-kicad.png" width="70%">
+<img src="docs/figures/fig-13-single-layer-pcb-kicad.png" width="50%">
 
-<img src="docs/figures/fig-15-double-layer-pcb-kicad.png" width="70%">
+<img src="docs/figures/fig-15-double-layer-pcb-kicad.png" width="50%">
 
 ## Machine Learning Model
 
@@ -110,8 +110,8 @@ The AD8232 single-lead ECG amplifier feeds into a RC filter circuit providing ba
 Cross-platform Flutter app (iOS/Android) connects to the Pi over WiFi for controlling recordings, monitoring electrode connectivity, viewing waveforms, and displaying diagnosis results.
 
 <p float="left">
-  <img src="docs/figures/fig-12b-flutter-connect.png" width="45%" />
-  <img src="docs/figures/fig-12e-flutter-diagnosis.png" width="45%" />
+  <img src="docs/figures/fig-12b-flutter-connect.png" width="25%" />
+  <img src="docs/figures/fig-12e-flutter-diagnosis.png" width="25%" />
 </p>
 
 ## References
