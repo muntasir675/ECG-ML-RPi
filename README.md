@@ -71,8 +71,6 @@ R peaks detected via SciPy `find_peaks`; P, Q, S, T located in windows relative 
 
 ![PQRST delineation](docs/figures/fig-05-pqrst-delineation.png)
 
-![PQRST detection on real signal](docs/figures/fig-10-pqrst-detection.png)
-
 ## Hardware Design
 
 ### Analog Front-End
@@ -92,8 +90,6 @@ The AD8232 single-lead ECG amplifier feeds into a discrete RC filter network pro
 ![Single-layer KiCAD design](docs/figures/fig-13-single-layer-pcb-kicad.png)
 
 ![Double-layer KiCAD design](docs/figures/fig-15-double-layer-pcb-kicad.png)
-
-![Double-layer integrated](docs/figures/fig-16-double-layer-integrated.png)
 
 ## Machine Learning Model
 
@@ -120,8 +116,8 @@ Diagnosis is reported only when confidence ≥ 50%. Predictions near ~25% per cl
 Cross-platform Flutter app (iOS/Android) connects to the Pi over WiFi for controlling recordings, monitoring electrode connectivity, viewing waveforms, and displaying diagnosis results.
 
 <p float="left">
-  <img src="docs/figures/fig-12a-flutter-home.png" width="45%" />
-  <img src="docs/figures/fig-20-diagnosis-results.png" width="45%" />
+  <img src="docs/figures/fig-12b-flutter-connect.png" width="45%" />
+  <img src="docs/figures/fig-12e-flutter-diagnosis.png" width="45%" />
 </p>
 
 ## References
