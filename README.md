@@ -18,11 +18,11 @@ System design, validation, and performance metrics are documented in the senior 
 
 ## System Architecture
 
-![System block diagram](docs/figures/fig-01-system-block-diagram.png)
+<img src="docs/figures/fig-01-system-block-diagram.png" width="70%">
 
 *AD8232 → RC filter → ADS1115 ADC → Raspberry Pi → Flutter app*
 
-![Server pipeline](docs/figures/fig-11-server-pipeline.png)
+<img src="docs/figures/fig-11-server-pipeline.png" width="60%">
 
 *Server workflow: recording → feature extraction → ML inference → diagnosis*
 
@@ -51,25 +51,25 @@ ECG-ML-RPi/
 
 Raw 250 Hz samples from ADS1115 with baseline wander, power-line interference (50 Hz), and muscle artifacts.
 
-![Noisy recording](docs/figures/fig-06-noisy-recording.png)
+<img src="docs/figures/fig-06-noisy-recording.png" width="80%">
 
 ### Stage 2 — Digital Bandpass + Notch
 
 Zero-phase Butterworth filter (0.5–40 Hz) + 50 Hz notch removes out-of-band noise and mains hum.
 
-![After bandpass and notch](docs/figures/fig-07-bandpass-notch.png)
+<img src="docs/figures/fig-07-bandpass-notch.png" width="80%">
 
 ### Stage 3 — Median Filter
 
 3-sample median filter removes short spikes and outliers.
 
-![After median filter](docs/figures/fig-08-median-filter.png)
+<img src="docs/figures/fig-08-median-filter.png" width="80%">
 
 ### Stage 4 — PQRST Delineation
 
 R peaks detected via SciPy `find_peaks`; P, Q, S, T located in windows relative to R.
 
-![PQRST delineation](docs/figures/fig-05-pqrst-delineation.png)
+<img src="docs/figures/fig-05-pqrst-delineation.png" width="80%">
 
 ## Hardware Design
 
@@ -77,7 +77,7 @@ R peaks detected via SciPy `find_peaks`; P, Q, S, T located in windows relative 
 
 The AD8232 single-lead ECG amplifier feeds into a discrete RC filter network providing band-pass conditioning (~0.5–50 Hz) before digitization.
 
-![Frequency response](docs/figures/fig-04-frequency-response.png)
+<img src="docs/figures/fig-04-frequency-response.png" width="80%">
 
 ### PCB Evolution
 
@@ -87,9 +87,9 @@ The AD8232 single-lead ECG amplifier feeds into a discrete RC filter network pro
 | Single-layer PCB | Toner-transfer etched — reduced noise |
 | Double-layer PCB | Fabricated — continuous ground plane, direct header mount, best noise performance |
 
-![Single-layer KiCAD design](docs/figures/fig-13-single-layer-pcb-kicad.png)
+<img src="docs/figures/fig-13-single-layer-pcb-kicad.png" width="70%">
 
-![Double-layer KiCAD design](docs/figures/fig-15-double-layer-pcb-kicad.png)
+<img src="docs/figures/fig-15-double-layer-pcb-kicad.png" width="70%">
 
 ## Machine Learning Model
 
