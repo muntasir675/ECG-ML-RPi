@@ -119,4 +119,4 @@ Cross-platform Flutter app (iOS/Android) connects to the Pi over WiFi for contro
 - Pan & Tompkins (1985) — Real-time QRS detection algorithm
 - Breiman (2001) — Random Forests
 - Akki2703 — ECG of Cardiac Ailments Dataset (Kaggle)
-- Full thesis: `docs/` contains the complete design report
+
