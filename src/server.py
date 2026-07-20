@@ -39,7 +39,7 @@ FEATURES_FILE = os.path.join(SCRIPT_DIR, "ecg_features_pi.csv")
 POINTS_FILE = os.path.join(SCRIPT_DIR, "ecg_points_pi.csv")
 PROCESSED_ECG_FILE = os.path.join(SCRIPT_DIR, "ecg_processed_pi.csv")
 DIAGNOSIS_FILE = os.path.join(SCRIPT_DIR, "ecg_diagnosis_pi.csv")
-DEBUG_ECG_FILE = os.path.join(SCRIPT_DIR, "Recordings/ecg_data_muntasir2.csv")
+DEBUG_ECG_FILE = os.path.join(SCRIPT_DIR, "Recordings/sample_recording.csv")
 STATUS_FILE = os.path.join(SCRIPT_DIR, "recording_status.json")
 RECORDINGS_DIR = os.path.join(SCRIPT_DIR, "Recordings")
 SDN_PIN = 25
@@ -125,7 +125,7 @@ def start_recording():
             time.sleep(0.1) # Allow ADC to stabilize
 
             # Start Record_IOO_n.py with duration 0 (infinite)
-            script_path = os.path.join(SCRIPT_DIR, "Record_IOO_n.py")
+            script_path = os.path.join(SCRIPT_DIR, "record_IOO_n.py")
             recording_process = subprocess.Popen(
                 [sys.executable, script_path, "--duration", "0", "--no-sdn"],
                 cwd=SCRIPT_DIR
@@ -229,9 +229,9 @@ def extract():
         if not os.path.exists(input_file):
             return jsonify(error="ECG file missing"), 404
         
-        script_path = os.path.join(SCRIPT_DIR, "Extract.py")
+        script_path = os.path.join(SCRIPT_DIR, "extract.py")
         if not os.path.exists(script_path):
-            return jsonify(error="Extract.py not found"), 404
+            return jsonify(error="extract.py not found"), 404
         
         result = subprocess.run([
             sys.executable, script_path,
@@ -256,9 +256,9 @@ def diagnose():
         if not os.path.exists(FEATURES_FILE):
             return jsonify(error="Features file missing"), 404
         
-        script_path = os.path.join(SCRIPT_DIR, "RP.py")
+        script_path = os.path.join(SCRIPT_DIR, "classify.py")
         if not os.path.exists(script_path):
-            return jsonify(error="RP.py not found"), 404
+            return jsonify(error="classify.py not found"), 404
         
         # The model files are in the same directory as the scripts.
         MODEL_DIR = SCRIPT_DIR
