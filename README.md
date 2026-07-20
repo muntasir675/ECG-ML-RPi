@@ -69,6 +69,10 @@ Zero-phase Butterworth filter (0.5–40 Hz) + 50 Hz notch removes out-of-band no
 
 The AD8232 single-lead ECG amplifier feeds into a RC filter circuit providing band-pass filtering (~0.5–50 Hz) and biasing to a baseline of ~1.5v.
 
+<img src="docs/figures/fig-02-schematic.png" width="80%">
+
+*Full system circuit schematic (AD8232, RC filter, ADS1115, Raspberry Pi)*
+
 <img src="docs/figures/fig-04-frequency-response.png" width="80%">
 
 ### PCB designs
