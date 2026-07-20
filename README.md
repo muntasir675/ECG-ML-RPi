@@ -2,8 +2,6 @@
 
 Portable cardiac condition diagnosis using machine learning on Raspberry Pi.
 
-System design, validation, and performance metrics are documented in the senior thesis under `docs/`.
-
 ## Features
 
 - **AD8232** ECG analog front-end with RC band-pass filtering (0.5–50 Hz)
@@ -65,21 +63,15 @@ Zero-phase Butterworth filter (0.5–40 Hz) + 50 Hz notch removes out-of-band no
 
 <img src="docs/figures/fig-08-median-filter.png" width="80%">
 
-### Stage 4 — PQRST Delineation
-
-R peaks detected via SciPy `find_peaks`; P, Q, S, T located in windows relative to R.
-
-<img src="docs/figures/fig-05-pqrst-delineation.png" width="80%">
-
 ## Hardware Design
 
 ### Analog Front-End
 
-The AD8232 single-lead ECG amplifier feeds into a discrete RC filter network providing band-pass conditioning (~0.5–50 Hz) before digitization.
+The AD8232 single-lead ECG amplifier feeds into a RC filter circuit providing band-pass filtering (~0.5–50 Hz) and centering the baseline to ~1.5v.
 
 <img src="docs/figures/fig-04-frequency-response.png" width="80%">
 
-### PCB Evolution
+### PCB designs
 
 | Revision | Description |
 |----------|-------------|
@@ -93,7 +85,7 @@ The AD8232 single-lead ECG amplifier feeds into a discrete RC filter network pro
 
 ## Machine Learning Model
 
-**Classifier**: Random Forest (100 trees, max depth 20, min samples per leaf 5)
+**Classifier**: Random Forest
 **Preprocessing**: Standardization → feature selection (top 30 by importance)
 **Dataset**: ECG of Cardiac Ailments (Kaggle) — 1200 samples, balanced across 4 classes
 
@@ -108,8 +100,6 @@ The AD8232 single-lead ECG amplifier feeds into a discrete RC filter network pro
 
 **Test accuracy**: 98.75%
 **Train-test gap**: 1.25%
-
-Diagnosis is reported only when confidence ≥ 50%. Predictions near ~25% per class are flagged as uncertain.
 
 ## Flutter Mobile Application
 
