@@ -43,6 +43,18 @@ ECG-ML-RPi/
 └── .gitignore
 ```
 
+## Dependencies
+
+The acquisition, extraction, classification, and server scripts require Python 3 with:
+
+- numpy
+- pandas
+- scipy
+- scikit-learn
+- flask
+- waitress
+- joblib
+
 ## Signal Processing Pipeline
 
 ### Stage 1 — Raw Acquisition

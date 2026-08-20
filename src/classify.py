@@ -16,9 +16,9 @@ def diagnose_ecg(features_csv, output_csv, model_dir):
         print(f"scikit-learn version: {sklearn.__version__}", file=sys.stderr)
 
         preprocessing_files = glob.glob(
-            os.path.join(model_dir, 'Models/ecg_preprocessing.pkl')
+            os.path.join(model_dir, 'Models/preprocessing.pkl')
         ) + glob.glob(
-            os.path.join(model_dir, 'models/ecg_preprocessing.pkl')
+            os.path.join(model_dir, 'models/preprocessing.pkl')
         )
         if not preprocessing_files:
             raise FileNotFoundError(
@@ -33,9 +33,9 @@ def diagnose_ecg(features_csv, output_csv, model_dir):
         train_medians = preprocessing['train_medians']
 
         model_files = glob.glob(
-            os.path.join(model_dir, 'Models/ecg_random_forest.pkl')
+            os.path.join(model_dir, 'Models/random_forest.pkl')
         ) + glob.glob(
-            os.path.join(model_dir, 'models/ecg_random_forest.pkl')
+            os.path.join(model_dir, 'models/random_forest.pkl')
         )
         if not model_files:
             raise FileNotFoundError(
